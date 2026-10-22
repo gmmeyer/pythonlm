@@ -256,7 +256,8 @@ pythonlm-data/
 | b1 | a4 continued | B 60% + B arith 15% + A 15% + A arith 10%, 3.0B tokens, lr 8e-4, 80 min | B: **1.4e-4** (natural 1.3e-4, long 1.2e-4, bignum 1.3e-2); 341 wrong in 2.5M: `CALL`/print 147, `%` 128, `//` 38, `LOAD_CONST` 20. Phase A after B: 1.3e-4 (a4: 7.1e-5) | B, first 4,000 scripts: **97.5%**; free-running 8.0e-5 (`%` 39, `LOAD_CONST` 23, `//` 14); 0 refusals; validator stopped 3 runs, rescued 1. Scripts of 1,000–10,000 steps: 156/156 |
 | b2 | b1 continued | same mix, 3.0B tokens, lr 5e-4, 80 min | B: **1.1e-4** (natural 1.2e-4, long 9.6e-5); 278 wrong: `LOAD_CONST` 141 (the `100101` script), `%` 100, `//` 25, rest ~12. Phase A after B: 6.4e-5 | B, first 4,000: **97.7%**; free-running 1.1e-4; 64 of 91 failures are the `100101` script family, without it ~99.3% |
 | b3 | b2 continued | B 45% (6.0B available) + B arith 30% + A 15% + A arith 10%, 3.0B tokens, lr 3e-4, 80 min | B: **2.2e-5**; 56 wrong in 2.5M: `%` 35, `//` 16, `STORE_NAME` 4; the `100101` copy errors are gone (0 `LOAD_CONST`) without the copy drill. natural 3.0e-5, long 4.1e-5, bignum 7.8e-3. Phase A after B: **2.8e-5** | **99.70% (9,986 of 10,016, full set): phase B gate passed** on generated scripts; free-running 1.7e-5 (all 43 divergences `%`/`//`); 0 refusals; 1,000–10,000-step scripts 386/387 |
-| c1 | b3 continued | C 50% + C arith 15% + C copy 10% + B 10% + B arith 5% + A 5% + A arith 5%, 3.0B tokens, lr 8e-4 | running | |
+| c1 | b3 continued | C 50% + C arith 15% + C copy 10% + B 10% + B arith 5% + A 5% + A arith 5%, 3.0B tokens, lr 8e-4, 80 min | C: **5.3e-3**; string indexing `s[i]` 17% wrong (8,508 of 48,752; still falling, 78% at step 1000), then `<=` 666, `LOAD_CONST` 432, string `+` 329 | not run |
+| c2 | c1 continued | C 40% + C arith 10% + C copy 5% + C edge 15% + B 8% + B edge 7% + B arith 3% + A 5% + A edge 5% + A arith 2%, 3.0B tokens, lr 5e-4 | running | |
 
 a1 and a2 used format 1 data, now in `$BCVM_DATA/v1/`. b1's `LOAD_CONST` and
 `CALL` errors (167 of 341) all come from one held-out natural script that prints
@@ -316,6 +317,41 @@ What a1 says:
   `copy` source, the grammar with most string literals repetitive patterns
   over small alphabets (`100101`, `abaab`, `ACGT…`). Phase C: train 6.02B
   tokens (shards 64–127 added), `train_copy` 1.03B.
+
+## Hand-written eval sets
+
+`eval/handwritten/phase{A,B,C}/`: 200 scripts each, written by Claude
+subagents at your request (the design asked for a person, since `natural/`
+is LLM-written). Four writers per phase used styles unlike `natural/`
+(everyday quick scripts, terse algorithms, semantics corner cases, long
+simulations), never read `natural/` or the generators, and verified each
+script with `bcvm check --bound 999 --max-steps 1000`.
+`scripts/check_holdout.py` scanned all 24.1M training groups: one trivial
+3-line script collided and was replaced. `bcvm gate <ckpt> eval/handwritten/phaseB`
+runs them.
+
+| Model | Phase A (200) | Phase B (200) |
+| --- | --- | --- |
+| a4 | 58.5% (80 validator stops) | |
+| b3 | 70.0% | 91.5% |
+
+They expose what the generated sets don't:
+
+- **Near-identical string constants in long listings.** 41 of b3's 60 phase
+  A failures are long hand-unrolled simulations printing "Round 1",
+  "Round 2", ...: loading one of them, the model copies from another
+  ("Round 4", "Month 4", "Customer 2: coips"). Generated phase A listings
+  are short (mean 277 tokens, max ~680) while these reach 1,400, so a4
+  (phase A data only) also fails at plain `LOAD_SMALL_INT` there; b3, trained
+  on B's longer listings, mostly doesn't.
+- **Patterns the generator rarely makes** (phase B): `and`/`or` used for an
+  int value (`x = a or 7`), chained comparisons like `a < b > c`, `range`
+  steps other than 2, 3, 5, 10, -1, -2, -3. These cause most validator stops.
+
+The `edge` source targets both: value `and`/`or`, free chained comparisons,
+range steps to ±25, label series (`"Round 1"`, `"Round 2"`, ...), and long
+phase A scripts (listings mean 734 tokens). `phase{A,B,C}/train_edge`, 1.03B
+tokens each, enter the mix from c2.
 
 ## Next steps
 
