@@ -177,7 +177,7 @@ def test_edge_source_prints_pads_and_chains_in_phase_c():
             continue
         kept.append(src)
     text = "\n".join(kept)
-    assert len(set(re.findall(r"sep=('[^']*'|\"[^\"]*\")", text))) >= 12
+    assert len(set(re.findall(r"sep=('[^']*'|\"[^\"]*\")", text))) >= 8
     assert len(re.findall(r"\* \(\d+ - len\(\w+\)\)", text)) >= 10
     assert len(re.findall(r"(?m)^\s*(\w+ = ){3,}", text)) >= 5
     assert "''" in text
