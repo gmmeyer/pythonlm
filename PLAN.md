@@ -256,7 +256,12 @@ pythonlm-data/
 | b1 | a4 continued | B 60% + B arith 15% + A 15% + A arith 10%, 3.0B tokens, lr 8e-4, 80 min | B: **1.4e-4** (natural 1.3e-4, long 1.2e-4, bignum 1.3e-2); 341 wrong in 2.5M: `CALL`/print 147, `%` 128, `//` 38, `LOAD_CONST` 20. Phase A after B: 1.3e-4 (a4: 7.1e-5) | B, first 4,000 scripts: **97.5%**; free-running 8.0e-5 (`%` 39, `LOAD_CONST` 23, `//` 14); 0 refusals; validator stopped 3 runs, rescued 1. Scripts of 1,000–10,000 steps: 156/156 |
 | b2 | b1 continued | same mix, 3.0B tokens, lr 5e-4 | running | |
 
-a1 and a2 used format 1 data, now in `$BCVM_DATA/v1/`. a3's remaining errors
+a1 and a2 used format 1 data, now in `$BCVM_DATA/v1/`. b1's `LOAD_CONST` and
+`CALL` errors (167 of 341) all come from one held-out natural script that prints
+the constant `"read bottom to top: 100101"` in a loop: copying the string, the
+model writes `1 0 0 1` and closes the quote, losing its place in the repeated
+digit pattern (`scripts/step_errors.py`). A copying weakness, not arithmetic;
+it will matter more in phase C. a3's remaining errors
 are in the work section's quotient digits, concentrated on divisors 11 and
 13 (13–26% wrong; every divisor ≤ 10 is ~0%), which the `arith` source covers.
 
