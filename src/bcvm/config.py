@@ -20,7 +20,7 @@ CONTEXT = 2048           # model context; listing + one step must fit
 MAX_LISTING_TOKENS = 1408
 MAX_STEP_TOKENS = CONTEXT - MAX_LISTING_TOKENS
 
-DATA_DIR = os.environ.get("BCVM_DATA", "/Volumes/New Volume/pythonlm-data")
+DATA_DIR = os.environ.get("BCVM_DATA", os.path.expanduser("~/work/pythonlm-data"))
 
 
 def require_pinned_python():
