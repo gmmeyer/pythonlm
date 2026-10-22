@@ -386,12 +386,17 @@ real encoding, uniform `i` over `[-len, len)`, strings up to 48):
 | Format | 0.26M examples | 0.77M | 1.28M | 1.54M |
 | --- | --- | --- | --- | --- |
 | `plain` (today's) | 5.1e-1 | 4.0e-2 | 1.6e-4 | 3.2e-4 (24+: 1.9e-3) |
+| `walk`: `<work> c:h i+ 0 c:e i+ 1 ... </work>` first | 1.8e-2 | 2.6e-3 | 2.4e-4 | 0 of 50K |
 
 Plain indexing is learnable in this model; the curve turns sharply between
 0.5M and 1.3M examples. c1 and c2 together saw only ~0.2M indexing steps
 (0.4–0.6% of phase C training steps, ~100 packed tokens per step), so the gap
 is mostly data volume, which the walks above add (~25K per 0.1B tokens of
-`train_edge3`).
+`train_edge3`). The walk scratch is far ahead early (25× at 0.26M) but both
+are ~2e-4 by 1.3M, and the full model already does much better than the
+probe's plain curve at equal volume (7% wrong at ~0.2M, the probe ~40%),
+so format 2 stays; if c3's extra volume leaves `s[i]` above ~1%, the walk
+becomes format 3 (regenerating phase C data and eval sets).
 
 ## Next steps
 
