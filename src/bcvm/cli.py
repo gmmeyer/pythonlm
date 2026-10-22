@@ -75,6 +75,9 @@ def cmd_run(a):
     from . import harness
     src = open(a.file).read()
     phase = a.phase or _phase_for(src) or "C"
+    if a.ckpt:
+        from .train import stepper
+        return stepper.run_script(a.file, a.ckpt, phase)
     return harness.main_run(a.file, phase, oracle=True)
 
 
@@ -149,6 +152,12 @@ def cmd_evalsteps(a):
     return 0
 
 
+def cmd_gate(a):
+    from .train import stepper
+    stepper.gate(a)
+    return 0
+
+
 def main(argv=None):
     from . import train
     p = argparse.ArgumentParser(prog="bcvm", description=__doc__)
@@ -168,9 +177,10 @@ def main(argv=None):
     s.add_argument("--steps", type=int, default=5)
     s.set_defaults(fn=cmd_show)
 
-    s = sub.add_parser("run", help="run a script through the harness with the oracle stepper")
+    s = sub.add_parser("run", help="run a script through the harness (oracle stepper, or the model with --ckpt)")
     s.add_argument("file")
     s.add_argument("--phase")
+    s.add_argument("--ckpt", help="model checkpoint; default is the oracle stepper")
     s.set_defaults(fn=cmd_run)
 
     s = sub.add_parser("gen", help="generate training shards for a phase")
@@ -219,6 +229,10 @@ def main(argv=None):
     s = sub.add_parser("evalsteps", help="teacher-forced per-step exact match of a checkpoint, by opcode")
     train.add_evalsteps_args(s)
     s.set_defaults(fn=cmd_evalsteps)
+
+    s = sub.add_parser("gate", help="end-to-end stdout match of a checkpoint on an eval set's scripts")
+    train.add_gate_args(s)
+    s.set_defaults(fn=cmd_gate)
 
     a = p.parse_args(argv)
     return a.fn(a)

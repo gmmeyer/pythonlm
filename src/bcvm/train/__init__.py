@@ -42,6 +42,19 @@ def add_train_args(p):
     p.add_argument("--ckpt-every", type=int, default=500)
 
 
+def add_gate_args(p):
+    p.add_argument("ckpt")
+    p.add_argument("set", help="eval dir relative to $BCVM_DATA, e.g. phaseA/eval_test")
+    p.add_argument("--phase", help="default: from the set's path")
+    p.add_argument("--limit", type=int, help="first N scripts only")
+    p.add_argument("--slots", type=int, default=256, help="scripts run concurrently")
+    p.add_argument("--candidates", type=int, default=3, help="greedy, then sampled on validator rejection")
+    p.add_argument("--temperature", type=float, default=1.0)
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--json", help="write the summary and failing scripts here")
+    p.add_argument("--keep-failures", type=int, default=100)
+
+
 def add_evalsteps_args(p):
     p.add_argument("ckpt")
     p.add_argument("sets", nargs="+", help="eval dirs, relative to $BCVM_DATA, e.g. phaseA/eval_test")

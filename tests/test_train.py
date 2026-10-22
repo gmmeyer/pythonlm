@@ -98,3 +98,45 @@ def test_evalset_opcodes(shard, tmp_path):
     assert names <= set(tokens.OPCODES) and "RETURN_VALUE" not in names
     assert sum(ev.prints) > 0
     assert sum(len(s) for _, s, _ in groups) == ev.max_steps
+
+
+def test_engine_decode_matches_full_forward():
+    """KV-cached, batched, grammar-masked decoding picks the same tokens as a
+    plain forward over listing + state + output: slots hold listings of
+    different lengths, a slot is reused for a new program, and each slot runs
+    several steps over the same step region."""
+    from bcvm import refvm
+    from bcvm.decoding import OutputGrammar
+    from bcvm.program import Program
+    from bcvm.train.stepper import Engine
+
+    from conftest import natural_files
+
+    torch.manual_seed(0)
+    model = StepModel(ModelConfig(d_model=64, n_layers=2, n_heads=4, d_ff=128, max_pos=1024))
+    srcs = [open(f).read() for f in natural_files("A")[:3] + natural_files("B")[:2]]
+
+    def fn(src, stepper):
+        prog = Program(src)
+        listing = ["<bos>"] + tokens.enc_listing(prog)
+        st, outs = refvm.State(0, (), {}), []
+        for _ in range(3):
+            state = tokens.enc_state(st) + ["=>"]
+            outs.append((state, next(iter(stepper.propose(prog, listing, state, 1)))))
+            st, _ = refvm.step(prog, st)
+        return prog, listing, outs
+
+    engine = Engine(model, n_slots=3)
+    results = engine.run_all(srcs, fn)
+    for prog, listing, outs in results:
+        for state, cand in outs:
+            x = torch.tensor(tokens.ids(listing + state + cand))[None]
+            with torch.no_grad():
+                logits = model(x, torch.arange(x.shape[1])[None], _causal(x.shape[1]))[0]
+            g = OutputGrammar(len(prog.instrs), len(prog.names))
+            start = len(listing) + len(state)
+            for j, t in enumerate(cand):
+                allowed = sorted(g.allowed())
+                row = logits[start - 1 + j]
+                assert row[tokens.TOKEN_ID[t]] >= row[allowed].max() - 1e-4
+                g.feed(t)
