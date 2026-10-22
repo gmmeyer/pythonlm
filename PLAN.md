@@ -62,6 +62,16 @@ later means regenerating data, which takes minutes.
   merges, and as real steps they were ~0.001% of the data, too rare to learn.
   The differential check drops CPython's events for them.
 - `<out> ... </out>` appears only on steps that print. Loss starts after `=>`.
+- **Work section (format 2).** A `BINARY_OP` step with `//` or `%` on ints
+  starts its output with scratch the harness ignores: the quotient most
+  significant digit first, and for `%` also the product divisor × quotient
+  (least significant first), so the remainder is a plain subtraction.
+  `754 // 13` → `=> <work> i+ 5 8 </work> <state> … i+ 8 5 names …`;
+  `754 % 13` → `=> <work> i+ 5 8 op:* i+ 4 5 7 </work> <state> … i+ 0 names …`.
+  Least-significant-first output suits `+ - *` but makes the quotient's
+  units digit, the last thing long division determines, the first token;
+  see the runs below. The output grammar requires the section on exactly
+  these steps (`tokens.work_kind`).
 - The run ends when ip reaches the module's `RETURN_VALUE`; the harness stops
   there, so the model never predicts it.
 - User names become `N0..N31` in order of first appearance. A builtin name
@@ -70,8 +80,9 @@ later means regenerating data, which takes minutes.
 - Vocabulary: 354 tokens. Larger than the design's 150–250 because of 48
   single-token names (`N0..N31`, `L0..L15`) and tokens reserved for phases D–F
   (opcodes, `&0..&31` heap refs, `LIST`, `DICT`, …), so it never changes and
-  checkpoints carry over between phases. Hash `a25d7f2a919c12f3` is in every
-  shard's metadata and checked on load.
+  checkpoints carry over between phases. Hash `308cf26ca50588a7` (format 2;
+  format 1 was `a25d7f2a919c12f3`, before `<r0>`/`<r1>` became
+  `<work>`/`</work>`) is in every shard's metadata and checked on load.
 
 **A stronger check than the design asked for.** Instead of names at line
 events, CPython runs with opcode tracing (`f_trace_opcodes`) and we compare,
@@ -240,6 +251,9 @@ pythonlm-data/
 | --- | --- | --- | --- | --- |
 | a1 | 26.1M: 8 layers × 512, 8 heads | A, 1.0B tokens, one pass, lr 1e-3 cosine, 27 min | 4.8e-3 (natural 5.4e-3, bignum 1.2e-2) | 85.1%; free-running step err 4.4e-3; 0 refusals; validator fired 6× |
 | a2-16L | 51.8M: 16 layers × 512 | same recipe, 1.0B tokens, 52 min (317K tok/s) | 4.4e-3: only 9% better, same `//` and `%` errors | not run |
+| a3 | as a1 | format 2 (work section, `//`/`%` weighted 4×), A, 3.0B tokens, ~80 min | running | |
+
+a1 and a2 used format 1 data, now in `$BCVM_DATA/v1/`.
 
 What a1 says:
 
@@ -249,9 +263,25 @@ What a1 says:
   `*` is 8%; `+`/`-` ≤0.4%. Negative operands are worse but rare. This is
   long division inside one step, with the quotient emitted least
   significant digit first, so it has to be finished before the first
-  output token. Doubling depth (a2-16L) at equal data barely helped, so
-  the lever is data: 1B tokens hold only ~66K of the hard division steps.
-  `scripts/binop_errors.py` gives the breakdown.
+  output token. `scripts/binop_detail.py` shows 760 of 761 `//` errors are
+  at the result's first (units) digit, with the tens digit right given it;
+  error by divisor goes from ~0% (1, 2, 4, 5, 10, 25, 100) to 45–55% (6–9)
+  and 75–80% (11, 13). Doubling depth (a2-16L) at equal data barely helped.
+  `scripts/binop_errors.py` gives the breakdown by operand size.
+- `scripts/arith_probe.py` trains the same model on `a op b` alone, in the
+  real int encoding, to compare output formats (error = result not exactly
+  right; a1 saw ~0.3–0.5M examples per operator):
+
+  | Format (output side) | `//` at 3M examples/op | `%` at 3M | `%` at 10M |
+  | --- | --- | --- | --- |
+  | `lsb`: result LSB-first (format 1) | 5.8e-3 | 2.2e-2 | 2.1e-3 |
+  | `msb`: result MSB-first | 2.0e-3 | 1.3e-1 | |
+  | `work`: quotient MSB-first, then result | 5.8e-4 | 3.2e-3 | |
+  | `work2`: as work, `%` also writes b × q (format 2) | 6.4e-4 | 1.3e-3 | |
+
+  Data helps every format; the work section gives ~10× at equal data, and
+  writing b × q another 2.5× on `%`. `*` and `+` reach ~0 with a few
+  million examples in any format.
 - Free-running error matches teacher-forced error, so errors don't compound
   beyond the per-step rate. The validator almost never fires because these
   are wrong values in a well-formed state, which it is designed not to check.
@@ -259,14 +289,15 @@ What a1 says:
   expected length-generalization gap.
 - Gate throughput: ~1,000 steps/s at 256 slots, GPU ~55% busy
   (Python-bound); the whole phase A test set takes 8 minutes.
-- Phase A data is now 3.07B tokens (96 shards; A_0032–A_0095 generated on
-  the 5090 box, `--records light`).
+- Format 2 data, regenerated on the 5090 box (`--records light` for train):
+  phase A 6.14B tokens (192 shards, 102M steps; division 9.1% of sampled
+  steps vs 4.0% before), B and C 3.0B each, all eval sets with the same
+  scripts as before.
 
 ## Next steps
 
-1. **Phase A to the bar.** More data (3B+ tokens) and upweighting
-   `//`, `%` and 2-digit `*` in step sampling, until `BINARY_OP` is ~1e-4 and
-   the gate passes 99%. Then your hand-written phase A set.
+1. **Phase A to the bar** (a3, format 2): until `BINARY_OP` is ~1e-4 and the
+   gate passes 99%. Then your hand-written phase A set.
 2. **Phase B**, continuing from the A checkpoint with 25% A replay
    (`--data B=0.75,A=0.25 --init ...`), then C.
 3. **Baseline** (once, phase B): same-size model from source straight to
