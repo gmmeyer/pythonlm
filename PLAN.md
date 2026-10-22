@@ -257,7 +257,7 @@ pythonlm-data/
 | b2 | b1 continued | same mix, 3.0B tokens, lr 5e-4, 80 min | B: **1.1e-4** (natural 1.2e-4, long 9.6e-5); 278 wrong: `LOAD_CONST` 141 (the `100101` script), `%` 100, `//` 25, rest ~12. Phase A after B: 6.4e-5 | B, first 4,000: **97.7%**; free-running 1.1e-4; 64 of 91 failures are the `100101` script family, without it ~99.3% |
 | b3 | b2 continued | B 45% (6.0B available) + B arith 30% + A 15% + A arith 10%, 3.0B tokens, lr 3e-4, 80 min | B: **2.2e-5**; 56 wrong in 2.5M: `%` 35, `//` 16, `STORE_NAME` 4; the `100101` copy errors are gone (0 `LOAD_CONST`) without the copy drill. natural 3.0e-5, long 4.1e-5, bignum 7.8e-3. Phase A after B: **2.8e-5** | **99.70% (9,986 of 10,016, full set): phase B gate passed** on generated scripts; free-running 1.7e-5 (all 43 divergences `%`/`//`); 0 refusals; 1,000–10,000-step scripts 386/387 |
 | c1 | b3 continued | C 50% + C arith 15% + C copy 10% + B 10% + B arith 5% + A 5% + A arith 5%, 3.0B tokens, lr 8e-4, 80 min | C: **5.3e-3**; string indexing `s[i]` 17% wrong (8,508 of 48,752; still falling, 78% at step 1000), then `<=` 666, `LOAD_CONST` 432, string `+` 329 | not run |
-| c2 | c1 continued | C 40% + C arith 10% + C copy 5% + C edge 15% + B 8% + B edge 7% + B arith 3% + A 5% + A edge 5% + A arith 2%, 3.0B tokens, lr 5e-4 | running | |
+| c2 | c1 continued | C 40% + C arith 10% + C copy 5% + C edge 15% + B 8% + B edge 7% + B arith 3% + A 5% + A edge 5% + A arith 2%, 3.0B tokens, lr 5e-4, 80 min | C: **2.4e-3**; `s[i]` 7.1% wrong (3,465 of 48,752), `<=` 2.1% (317), `LOAD_NAME` 246, string `+` 188, `CALL` 188 | not run on `eval_test`; hand-written A 88.5%, B 97.0% (below) |
 
 a1 and a2 used format 1 data, now in `$BCVM_DATA/v1/`. b1's `LOAD_CONST` and
 `CALL` errors (167 of 341) all come from one held-out natural script that prints
@@ -334,6 +334,7 @@ runs them.
 | --- | --- | --- |
 | a4 | 58.5% (80 validator stops) | |
 | b3 | 70.0% | 91.5% |
+| c2 (edge drill) | 88.5% | 97.0% |
 
 They expose what the generated sets don't:
 
@@ -352,6 +353,45 @@ The `edge` source targets both: value `and`/`or`, free chained comparisons,
 range steps to ±25, label series (`"Round 1"`, `"Round 2"`, ...), and long
 phase A scripts (listings mean 734 tokens). `phase{A,B,C}/train_edge`, 1.03B
 tokens each, enter the mix from c2.
+
+c2's 23 phase A failures, measured with `scripts/coverage.py` (step kinds,
+name counts and listing lengths of eval scripts against training shards):
+
+- **More than 10 names: 8 of 8 such scripts fail.** The generator's name
+  pool was 3–10, so `N10`–`N31` never occurred in training.
+- **`SWAP 3`** (`a, b, c = c, a, b`): 8 failures; in 4.5% of the
+  hand-written scripts but 0.01% of training groups.
+- The rest: copying the wrong one of several near-identical labels
+  ("floor 7" printed as "floor 11", "Tuosday") and three `//` steps.
+
+Phase B's 6: bools used as numbers (`t == 1`, `(not a) + (not b)`,
+`n += i > 0`, `f = g = a > b`), which the generator never mixes. Phase C
+(coverage against `phaseC/train*`): `s[i]` is 2.9% of the hand-written steps
+(45% of scripts) but 0.48% of training's, always with a variable index inside
+a loop over the string's positions (`s[i]`, `s[-1 - i]`, `s[len(s) - 1 - i]`),
+where the generator only indexed with literals; f-strings of 8–11 parts and
+prints of 5–7 arguments never occur in training.
+
+The edge source now also makes: 40% of scripts with 11–28 names (declared
+up front, as long hand-written scripts do), tuple assignment of two and three
+names, and from phase B bools as numbers; in phase C, `for`/`while` walks over
+a string's positions (counting matches, building strings, palindrome checks;
+`s[i]` 5.8% of steps), f-strings of up to 6 interpolations and prints of up to
+7 arguments. `phaseA/train_edge2` (names, swaps) and `phase{B,C}/train_edge3`
+(everything), 1.03B tokens each, about 70 s each to generate.
+
+**String indexing probe** (`scripts/index_probe.py`, `s[i]` alone in the
+real encoding, uniform `i` over `[-len, len)`, strings up to 48):
+
+| Format | 0.26M examples | 0.77M | 1.28M | 1.54M |
+| --- | --- | --- | --- | --- |
+| `plain` (today's) | 5.1e-1 | 4.0e-2 | 1.6e-4 | 3.2e-4 (24+: 1.9e-3) |
+
+Plain indexing is learnable in this model; the curve turns sharply between
+0.5M and 1.3M examples. c1 and c2 together saw only ~0.2M indexing steps
+(0.4–0.6% of phase C training steps, ~100 packed tokens per step), so the gap
+is mostly data volume, which the walks above add (~25K per 0.1B tokens of
+`train_edge3`).
 
 ## Next steps
 
