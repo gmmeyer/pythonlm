@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+/data/
+/out/
+*.bin
+!tests/fixtures/*.bin
+.DS_Store
+._*
