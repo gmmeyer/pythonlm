@@ -251,9 +251,12 @@ pythonlm-data/
 | --- | --- | --- | --- | --- |
 | a1 | 26.1M: 8 layers × 512, 8 heads | A, 1.0B tokens, one pass, lr 1e-3 cosine, 27 min | 4.8e-3 (natural 5.4e-3, bignum 1.2e-2) | 85.1%; free-running step err 4.4e-3; 0 refusals; validator fired 6× |
 | a2-16L | 51.8M: 16 layers × 512 | same recipe, 1.0B tokens, 52 min (317K tok/s) | 4.4e-3: only 9% better, same `//` and `%` errors | not run |
-| a3 | as a1 | format 2 (work section, `//`/`%` weighted 4×), A, 3.0B tokens, ~80 min | running | |
+| a3 | as a1 | format 2 (work section, `//`/`%` weighted 4×), A, 3.0B tokens, 80 min | **2.9e-4** (natural 2.6e-4, bignum 8.1e-3); `//` 0.8%, `%` 0.5% wrong, all else ~5 errors | **98.97%** (9,913); free-running 2.8e-4; 0 refusals; validator never fired |
+| a4 | a3 continued | A 70% + `train_arith` 30%, 3.0B tokens, lr 5e-4 | running | |
 
-a1 and a2 used format 1 data, now in `$BCVM_DATA/v1/`.
+a1 and a2 used format 1 data, now in `$BCVM_DATA/v1/`. a3's remaining errors
+are in the work section's quotient digits, concentrated on divisors 11 and
+13 (13–26% wrong; every divisor ≤ 10 is ~0%), which the `arith` source covers.
 
 What a1 says:
 
