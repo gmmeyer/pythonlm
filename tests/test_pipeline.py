@@ -117,3 +117,23 @@ def test_edge_source_has_swaps_and_many_names():
         names.append(len(prog.names))
     assert swaps["SWAP 3"] >= 10 and swaps["SWAP 2"] >= 5
     assert sum(n > 10 for n in names) >= 10 and max(names) >= 16
+
+
+def test_edge_source_uses_bools_as_numbers():
+    import random
+    import re
+    from bcvm import pipeline
+    from bcvm.gen import make
+    rng = random.Random(9)
+    srcs = []
+    for _ in range(150):
+        src, _ = make(rng, "B", "edge")
+        try:
+            pipeline.prepare(src, "B")
+        except pipeline.Skip:
+            continue
+        srcs.append(src)
+    text = "\n".join(srcs)
+    assert len(re.findall(r"\(not [^()]+\) [-+*]", text)) >= 3
+    assert len(re.findall(r"(?m)^\s*\w+ [-+]= (not |\w+ [<>=!]=? )", text)) >= 3
+    assert len(re.findall(r"(?m)^\s*\w+ = \w+ = ", text)) >= 3

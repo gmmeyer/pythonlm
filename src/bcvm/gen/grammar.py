@@ -47,7 +47,8 @@ class Gen:
         # operators, range steps up to 25, long scripts full of near-identical
         # labels ("Round 1", "Round 2", ...) that must be told apart when copied,
         # tuple assignment of two and three names (SWAP 2, SWAP 3), and scripts
-        # with 11-28 names (other sources stay within N0-N9)
+        # with 11-28 names (other sources stay within N0-N9); from phase B,
+        # bools used as numbers (`t == 1`, `(not a) + (not b)`, `n += i > 0`)
         self.edge = edge
         self.series = [rng.choice(SERIES_STEMS), rng.randint(0, 3)]
         self.op_weights = [10, 8, 22, 30, 30] if arith else [30, 25, 18, 13, 14]
@@ -485,6 +486,53 @@ class Gen:
             ints = self.vars_of("int")
             self.emit(depth, f"print(not {self.rng.choice(ints) if ints else self.int_literal().src})")
 
+    def boolish(self):
+        """A bool of the kind people go on to count or compare: a bool name,
+        `not x`, or a comparison."""
+        rng = self.rng
+        bools = self.vars_of("bool")
+        r = rng.random()
+        if bools and r < 0.35:
+            return Expr(rng.choice(bools), ATOM, None, "bool")
+        if r < 0.6:
+            return Expr(f"not {_wrap(self.int_leaf(), NOT)}", NOT, None, "bool")
+        a, b = self.int_leaf(), self.int_leaf()
+        return Expr(f"{a.src} {rng.choice(['<', '>', '==', '!=', '<=', '>='])} {b.src}", CMP, None, "bool")
+
+    def bool_arith(self, depth):
+        """Bools used as numbers: `print(t == 1)`, `print((not a) + (not b))`,
+        `n += i > 0`, `f = g = a > b`."""
+        rng = self.rng
+        a = self.boolish()
+        r = rng.random()
+        if r < 0.35:
+            b = self.boolish() if self.chance(0.5) else Expr(str(rng.choice([0, 1, 1, 2])), ATOM, None, "int")
+            self.emit(depth, f"print({_wrap(a, CMP + 1)} {rng.choice(['==', '!=', '<', '>'])} {_wrap(b, CMP + 1)})")
+        elif r < 0.65:
+            b = self.boolish() if self.chance(0.6) else self.int_leaf()
+            op = rng.choice(["+", "-", "*"])
+            prec = MUL if op == "*" else ADD
+            e = f"{_wrap(a, prec)} {op} {_wrap(b, prec, right=True)}"
+            if self.chance(0.5):
+                self.emit(depth, f"print({e})")
+            else:
+                name = self.fresh_or_existing("int")
+                self.emit(depth, f"{name} = {e}")
+                self.set_var(name, "int", None)
+        elif r < 0.85 and self.vars_of("int", assignable=True):
+            name = rng.choice(self.vars_of("int", assignable=True))
+            self.emit(depth, f"{name} {rng.choice(['+=', '+=', '-='])} {a.src}")
+            self.set_var(name, "int", None)
+        else:
+            f = self.fresh_or_existing("bool")
+            g = next((v for v in self.pool if v not in self.vars and v != f), None)
+            if g is None:
+                return
+            self.emit(depth, f"{f} = {g} = {a.src}")
+            self.set_var(f, "bool", None)
+            self.set_var(g, "bool", None)
+            self.emit(depth, f"print({f} {rng.choice(['==', '+', '!='])} {g})")
+
     def ifexp_assign(self, depth):
         name = self.fresh_or_existing("int")
         c = self.cond()
@@ -502,7 +550,7 @@ class Gen:
         if self.edge:
             weights.update(tuple=8)
         if self.edge and self.B:
-            weights.update(logic=25)
+            weights.update(logic=25, boolmix=12)
         if self.chance(0.02):
             e = self.int_expr(1, 2)
             self.emit(depth, e.src)  # expression statement, value discarded
@@ -522,6 +570,8 @@ class Gen:
             self.logic_stmt(depth)
         elif kind == "tuple":
             self.tuple_assign(depth)
+        elif kind == "boolmix":
+            self.bool_arith(depth)
         else:
             self.emit(depth, "pass")
 
