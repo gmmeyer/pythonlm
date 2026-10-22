@@ -192,9 +192,9 @@ as a smoke test; your hand-written set is the real check.
 
 ## Storage and transfer
 
-- **Code** → git (this repo; it's small). Remote Login is on here, so the
-  5090 machine can pull directly:
-  `git clone greg@192.168.1.47:work/pythonlm` (or push to a hosted remote).
+- **Code** → git: private repo `github.com/gmmeyer/pythonlm`
+  (`git clone git@github.com:gmmeyer/pythonlm.git`). Remote Login is also on
+  here, so `git clone greg@192.168.1.47:work/pythonlm` works on the LAN.
 - **Data** → `~/work/pythonlm-data` on this Mac's SSD (override with
   `BCVM_DATA`). Copy it over the LAN, either pulled from the 5090 machine:
   `rsync -a --partial --exclude '._*' greg@192.168.1.47:work/pythonlm-data/ /data/pythonlm-data/`,
