@@ -6,10 +6,10 @@ the same StepModel. Formats for the output side:
 
   lsb    i± r(lsb)                         what the interpreter emits today
   msb    i± r(msb)                         result most significant digit first
-  work   <r0> i± q(msb) <r1> i± r(lsb)     for // and %: the quotient MSB-first
+  work   <work> i± q(msb) </work> i± r(lsb)     for // and %: the quotient MSB-first
                                            as scratch, then the usual result
   work2  as work, but % also writes the product b*q (lsb):
-         <r0> i± q(msb) <r1> i± bq(lsb) <r2> i± r(lsb), so r = a - bq is a subtraction
+         <work> i± q(msb) </work> i± bq(lsb) <r2> i± r(lsb), so r = a - bq is a subtraction
 
 Operands mimic the hard region of phase A: a in [-999, 999]; b with 1, 2 or 3
 digits; products bounded by 999.
@@ -63,9 +63,9 @@ def encode(op, a, b, fmt):
         out = int_toks(r, msb=True)
     elif fmt == "work2" and op == "%":
         q = a // b
-        out = [T["<r0>"]] + int_toks(q, msb=True) + [T["<r1>"]] + int_toks(b * q) + [T["<r2>"]] + int_toks(r)
+        out = [T["<work>"]] + int_toks(q, msb=True) + [T["</work>"]] + int_toks(b * q) + [T["<r2>"]] + int_toks(r)
     elif fmt in ("work", "work2") and op in ("//", "%"):
-        out = [T["<r0>"]] + int_toks(a // b, msb=True) + [T["<r1>"]] + int_toks(r)
+        out = [T["<work>"]] + int_toks(a // b, msb=True) + [T["</work>"]] + int_toks(r)
     else:
         out = int_toks(r)
     return inp, out + [T["<eos>"]]
