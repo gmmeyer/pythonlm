@@ -160,3 +160,24 @@ def test_edge_source_walks_strings_in_phase_c():
     text = "\n".join(kept)
     assert re.search(r"for \w+ in range\(len\(\w+\)\):", text) and re.search(r"while \w+ < len\(\w+\):", text)
     assert sum(idx.values()) >= 100 and len(idx) >= 20
+
+
+def test_edge_source_prints_pads_and_chains_in_phase_c():
+    import random
+    import re
+    from bcvm import pipeline
+    from bcvm.gen import make
+    rng = random.Random(14)
+    kept = []
+    for _ in range(150):
+        src, _ = make(rng, "C", "edge")
+        try:
+            pipeline.prepare(src, "C")
+        except pipeline.Skip:
+            continue
+        kept.append(src)
+    text = "\n".join(kept)
+    assert len(set(re.findall(r"sep=('[^']*'|\"[^\"]*\")", text))) >= 12
+    assert len(re.findall(r"\* \(\d+ - len\(\w+\)\)", text)) >= 10
+    assert len(re.findall(r"(?m)^\s*(\w+ = ){3,}", text)) >= 5
+    assert "''" in text

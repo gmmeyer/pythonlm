@@ -10,6 +10,10 @@ rest to the reference interpreter, which discards scripts that break a limit.
 from .. import config
 from .common import SERIES_STEMS, VAR_NAMES, WORDS, pattern_text, random_text, small_int, string_literal
 
+# print separators and endings people use, beyond the standard mix's few
+SEPS = ["", " ", "  ", ", ", ",", "-", " - ", "|", " | ", ":", ": ", "\t", "\n", " -> ", " = ", ". ", "/",
+        " / ", "; ", "*", "...", " + ", "_", "#", "\n\n"]
+
 BOUND = config.INT_BOUND
 
 # precedence levels for parenthesisation
@@ -50,7 +54,8 @@ class Gen:
         # with 11-28 names (other sources stay within N0-N9); from phase B,
         # bools used as numbers (`t == 1`, `(not a) + (not b)`, `n += i > 0`);
         # in phase C, loops over a string's positions (`s[i]`, `s[-1 - i]`,
-        # counting and building strings) and longer f-strings and prints
+        # counting and building strings) and longer f-strings and prints; empty
+        # strings, any print sep/end, fixed-width padding, `a = b = c = "."`
         self.edge = edge
         self.series = [rng.choice(SERIES_STEMS), rng.randint(0, 3)]
         self.op_weights = [10, 8, 22, 30, 30] if arith else [30, 25, 18, 13, 14]
@@ -252,6 +257,8 @@ class Gen:
 
     # ------------------------------------------------------------ str exprs (phase C)
     def str_literal_expr(self):
+        if self.edge and self.C and self.chance(0.06):
+            return Expr("''", ATOM, "", "str")
         if self.edge and self.chance(0.55):
             self.series[1] += self.rng.choice([1, 1, 1, 2, 0])
             s = f"{self.series[0]} {self.series[1]}"
@@ -323,11 +330,25 @@ class Gen:
             srcs.append(tail)
         return Expr('f"' + "".join(srcs) + '"', ATOM, "".join(parts) if known else None, "str")
 
+    def sep_text(self, end=False):
+        """For the edge drill, a print sep or end from the wide set (it may be
+        ''); None means the standard choice."""
+        if not self.edge or not self.chance(0.7):
+            return None
+        rng = self.rng
+        if self.chance(0.35):
+            return random_text(rng, 1, 4)
+        s = rng.choice(SEPS)
+        return s + "\n" if end and self.chance(0.4) else s
+
+    def _kw(self, chosen, standard):
+        return self.rng.choice(standard) if chosen is None else chosen
+
     # ------------------------------------------------------------ statements
     def print_stmt(self, depth):
         rng = self.rng
         if self.C and self.chance(0.45):
-            n = rng.randint(2, 7) if self.edge else rng.randint(2, 4)
+            n = rng.randint(0, 10) if self.edge else rng.randint(2, 4)
             args = []
             for _ in range(n):
                 k = rng.random()
@@ -341,9 +362,9 @@ class Gen:
                     args.append(self.int_expr(1, 2).src)
             kw = []
             if self.chance(0.25):
-                kw.append(f"sep={rng.choice(['', ', ', '-', ' | ', ':', chr(9)])!r}")
+                kw.append(f"sep={self._kw(self.sep_text(), ['', ', ', '-', ' | ', ':', chr(9)])!r}")
             if self.chance(0.3):
-                kw.append(f"end={rng.choice(['', ' ', ', ', '!' + chr(10), chr(10) + chr(10), ';'])!r}")
+                kw.append(f"end={self._kw(self.sep_text(end=True), ['', ' ', ', ', '!' + chr(10), chr(10) + chr(10), ';'])!r}")
             self.emit(depth, f"print({', '.join(args + kw)})")
             return
         r = rng.random()
@@ -437,6 +458,68 @@ class Gen:
         self.emit(depth, f"{', '.join(targets)} = {', '.join(e.src for e in rhs)}")
         for name, e in zip(targets, rhs):
             self.set_var(name, "int", e.val)
+
+    def chain_assign(self, depth):
+        """One value bound to many names: `a = b = c = d = "."` (COPY 1 each)."""
+        rng = self.rng
+        kind = "str" if self.C and self.chance(0.5) else "int"
+        names = []
+        for _ in range(rng.randint(2, 9)):
+            unused = [v for v in self.pool if v not in self.vars and v not in names]
+            existing = [v for v in self.vars_of(kind, assignable=True) if v not in names]
+            if unused and (not existing or self.chance(0.6)):
+                names.append(unused[0])
+            elif existing:
+                names.append(rng.choice(existing))
+        if len(names) < 2:
+            return
+        if kind == "str":
+            e = self.str_literal_expr() if self.chance(0.7) else self.str_expr(shallow=True)
+            if e.val is not None and len(e.val) > config.MAX_STR_LEN:
+                return
+        else:
+            e = self.int_expr(1, 2)
+        self.emit(depth, " = ".join(names) + f" = {e.src}")
+        for v in names:
+            self.set_var(v, kind, e.val)
+
+    def pad_stmt(self, depth):
+        """Fixed-width text, as tables and ASCII art are built:
+        `" " * (w - len(s)) + s`, `s + "." * (12 - len(s)) + "|"`, `"-" * w`."""
+        rng = self.rng
+        strs = self.vars_of("str")
+        if not strs or self.chance(0.3):
+            s = self.fresh_or_existing("str")
+            if s in self.protected:
+                return
+            e = self.str_literal_expr() if self.chance(0.6) else Expr(repr(rng.choice(WORDS)), ATOM, None, "str")
+            self.emit(depth, f"{s} = {e.src}")
+            self.set_var(s, "str", e.val)
+        else:
+            s = rng.choice(strs)
+        fill = repr(rng.choice([" ", " ", " ", ".", "-", "*", "#", "=", "_", "0", "~"]))
+        w = rng.randint(4, 24)
+        pad = f"{fill} * ({w} - len({s}))"
+        r = rng.random()
+        if r < 0.3:
+            e = f"{pad} + {s}"
+        elif r < 0.6:
+            e = f"{s} + {pad} + {rng.choice(['|', ':', ' |', ''])!r}"
+        elif r < 0.75:
+            e = f"{rng.choice(['|', '[', '', '# '])!r} + {pad} + {s}"
+        elif r < 0.9:
+            e = f"{fill} * {w}"
+        else:
+            e = f"{s} + {pad} + {rng.choice(['|', ''])!r} + {fill} * {rng.randint(0, 6)}"
+        if self.chance(0.6):
+            self.emit(depth, f"print({e})")
+            return
+        t = self.fresh_or_existing("str")
+        if t in self.protected:
+            return
+        self.emit(depth, f"{t} = {e}")
+        self.set_var(t, "str", None)
+        self.emit(depth, f"print({t}, len({t}))" if self.chance(0.3) else f"print({t})")
 
     def assign_bool(self, depth):
         name = self.fresh_or_existing("bool")
@@ -550,7 +633,9 @@ class Gen:
         if self.C:
             weights.update(str=35, print=40)
         if self.edge:
-            weights.update(tuple=8)
+            weights.update(tuple=8, chain=4)
+        if self.edge and self.C:
+            weights.update(pad=10)
         if self.edge and self.B:
             weights.update(logic=25, boolmix=12)
         if self.chance(0.02):
@@ -574,6 +659,10 @@ class Gen:
             self.tuple_assign(depth)
         elif kind == "boolmix":
             self.bool_arith(depth)
+        elif kind == "chain":
+            self.chain_assign(depth)
+        elif kind == "pad":
+            self.pad_stmt(depth)
         else:
             self.emit(depth, "pass")
 

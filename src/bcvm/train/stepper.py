@@ -311,7 +311,9 @@ def _phase_of(path):
 
 def _run_one(rec, stepper, phase, candidates):
     stepper.reset(None)
-    res = harness.run(rec["src"], phase, stepper, max_steps=max(10_000, 2 * rec["steps"]), candidates=candidates)
+    # a correct run takes exactly rec["steps"]; well past that it has failed, and
+    # a runaway script decoded alone at the end would dominate the gate's time
+    res = harness.run(rec["src"], phase, stepper, max_steps=2 * rec["steps"] + 100, candidates=candidates)
     return res, stepper.diverged, stepper.steps
 
 
