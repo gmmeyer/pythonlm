@@ -253,7 +253,8 @@ pythonlm-data/
 | a2-16L | 51.8M: 16 layers × 512 | same recipe, 1.0B tokens, 52 min (317K tok/s) | 4.4e-3: only 9% better, same `//` and `%` errors | not run |
 | a3 | as a1 | format 2 (work section, `//`/`%` weighted 4×), A, 3.0B tokens, 80 min | **2.9e-4** (natural 2.6e-4, bignum 8.1e-3); `//` 0.8%, `%` 0.5% wrong, all else ~5 errors | **98.97%** (9,913); free-running 2.8e-4; 0 refusals; validator never fired |
 | a4 | a3 continued | A 70% + `train_arith` 30%, 3.0B tokens, lr 5e-4, 80 min | **7.1e-5** (natural 6.4e-5, bignum 8.0e-3); 33 wrong steps in 466K, 30 of them `//`/`%` | **99.81% (9,997): phase A gate passed** on generated scripts; free-running 6.9e-5; 0 refusals; validator never fired |
-| b1 | a4 continued | B 60% + B arith 15% + A 15% + A arith 10%, 3.0B tokens, lr 8e-4 | running | |
+| b1 | a4 continued | B 60% + B arith 15% + A 15% + A arith 10%, 3.0B tokens, lr 8e-4, 80 min | B: **1.4e-4** (natural 1.3e-4, long 1.2e-4, bignum 1.3e-2); 341 wrong in 2.5M: `CALL`/print 147, `%` 128, `//` 38, `LOAD_CONST` 20. Phase A after B: 1.3e-4 (a4: 7.1e-5) | B, first 4,000 scripts: **97.5%**; free-running 8.0e-5 (`%` 39, `LOAD_CONST` 23, `//` 14); 0 refusals; validator stopped 3 runs, rescued 1. Scripts of 1,000–10,000 steps: 156/156 |
+| b2 | b1 continued | same mix, 3.0B tokens, lr 5e-4 | running | |
 
 a1 and a2 used format 1 data, now in `$BCVM_DATA/v1/`. a3's remaining errors
 are in the work section's quotient digits, concentrated on divisors 11 and
