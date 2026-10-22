@@ -38,8 +38,9 @@ def load_model(path, dev="cuda"):
 
 
 @torch.no_grad()
-def evaluate(model, directory, seq_len, rows, max_steps=None):
-    """Teacher-forced exact match: a step is right if argmax gets every output token right."""
+def evaluate(model, directory, seq_len, rows, max_steps=None, per_step=False):
+    """Teacher-forced exact match: a step is right if argmax gets every output token right.
+    per_step adds 'wrong', a bool array over the set's steps (not JSON-serializable)."""
     ev = EvalSet(directory, max_steps)
     dev = next(model.parameters()).device
     wrong = torch.zeros(ev.max_steps, dtype=torch.int64, device=dev)
@@ -59,9 +60,12 @@ def evaluate(model, directory, seq_len, rows, max_steps=None):
     wrong = wrong[:n].cpu().numpy() > 0
     opcode, prints = np.array(ev.opcode), np.array(ev.prints)
     by_op = {str(op): [int((opcode == op).sum()), int(wrong[opcode == op].sum())] for op in np.unique(opcode)}
-    return dict(set=directory, steps=n, step_errors=int(wrong.sum()), step_err=float(wrong.mean()),
-                tok_err=tok_bad.item() / max(1, tok_n.item()), loss=loss.item() / max(1, tok_n.item()),
-                print_steps=[int(prints.sum()), int(wrong[prints].sum())], by_opcode=by_op)
+    r = dict(set=directory, steps=n, step_errors=int(wrong.sum()), step_err=float(wrong.mean()),
+             tok_err=tok_bad.item() / max(1, tok_n.item()), loss=loss.item() / max(1, tok_n.item()),
+             print_steps=[int(prints.sum()), int(wrong[prints].sum())], by_opcode=by_op)
+    if per_step:
+        r["wrong"] = wrong
+    return r
 
 
 def format_eval(r, top=8):
