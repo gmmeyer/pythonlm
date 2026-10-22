@@ -219,23 +219,58 @@ pythonlm-data/
   phaseB/...
 ```
 
+## The 5090 box
+
+- WSL2 Ubuntu 24.04 (native Windows lacks a first-class Triton for
+  `torch.compile` and FlexAttention). Python 3.14.8, torch 2.14.1+cu130,
+  `sm_120`. The venv lives on WSL's ext4 (`UV_PROJECT_ENVIRONMENT=~/.venvs/pythonlm`)
+  while the source can stay on the Windows side; `~/.local/bin/pylm <cmd>`
+  sets that up plus `BCVM_DATA` and runs `uv run --extra train <cmd>`.
+- Data at `E:\work\pythonlm-data` = `/mnt/e/work/pythonlm-data`. WSL reads
+  whole shards through 9P at ~200 MB/s but random memmap reads cost ~0.2 ms
+  each, so the loader reads whole shards into RAM. No need to copy to ext4.
+- Runs go to `$BCVM_DATA/runs/<name>/` (`log.jsonl`, `stdout.txt`,
+  `latest.pt`, `final.pt`, eval and gate JSON). A checkpoint with optimizer
+  state is ~310 MB at 26M params.
+- Generation works here too: 2B phase A tokens in 159 s on 24 workers.
+
+## Training runs
+
+| Run | Model | Data | Step err, teacher-forced (`eval_test`) | Gate: stdout match (`eval_test`, 10,016 scripts) |
+| --- | --- | --- | --- | --- |
+| a1 | 26.1M: 8 layers × 512, 8 heads | A, 1.0B tokens, one pass, lr 1e-3 cosine, 27 min | 4.8e-3 (natural 5.4e-3, bignum 1.2e-2) | 85.1%; free-running step err 4.4e-3; 0 refusals; validator fired 6× |
+| a2-16L | 51.8M: 16 layers × 512 | same recipe, 1.0B tokens, ~52 min (321K tok/s) | running | |
+
+What a1 says:
+
+- Everything except `BINARY_OP` is nearly there: 5 wrong steps in ~400K.
+- `BINARY_OP` is 3.5% wrong, almost all `//` and `%`, and those errors sit
+  in 3-digit dividends with 1–2-digit divisors (17–26% wrong); 2×2-digit
+  `*` is 8%; `+`/`-` ≤0.4%. Negative operands are worse but rare. This is
+  long division inside one step, with the quotient emitted least
+  significant digit first, so it has to be finished before the first
+  output token: a depth problem as much as a data one. a2-16L tests depth
+  at equal data. `scripts/binop_errors.py` gives the breakdown.
+- Free-running error matches teacher-forced error, so errors don't compound
+  beyond the per-step rate. The validator almost never fires because these
+  are wrong values in a well-formed state, which it is designed not to check.
+- `eval_bignum` (ints to 99,999) also degrades copying and printing, the
+  expected length-generalization gap.
+- Gate throughput: ~1,000 steps/s at 256 slots, GPU ~55% busy
+  (Python-bound); the whole phase A test set takes 8 minutes.
+- Phase A data is now 3.07B tokens (96 shards; A_0032–A_0095 generated on
+  the 5090 box, `--records light`).
+
 ## Next steps
 
-1. **Trainer** (on the 5090): torch 2.9+, Python 3.14, this repo installed
-   with `uv sync --extra train`. A decoder-only transformer, RoPE, 2,048
-   context, vocab 354. Packed groups via FlexAttention block masks (positions
-   restart at `listing_len` for each step), loss on tokens after `=>`, bf16,
-   AdamW, cosine. Sample shards by phase weight for replay. Log teacher-forced
-   per-step exact match on `eval_test` by opcode.
-2. **Model stepper** for `harness.run`: prefill the listing once (KV cache),
-   then per step feed the state and decode under `decoding.OutputGrammar`
-   masks. Greedy first, then sampled candidates on validator failure. Measure
-   the safeguard rate.
-3. **Phase A gate:** 99% stdout match on `eval_test` and on your hand-written
-   phase A set, all refusals correct, per-step error measured. Then B, then C.
-4. **Baseline** (once, phase B): same-size model from source straight to
+1. **Phase A to the bar.** Depth (a2-16L), then more data and/or upweighting
+   `//`, `%` and 2-digit `*` in step sampling, until `BINARY_OP` is ~1e-4 and
+   the gate passes 99%. Then your hand-written phase A set.
+2. **Phase B**, continuing from the A checkpoint with 25% A replay
+   (`--data B=0.75,A=0.25 --init ...`), then C.
+3. **Baseline** (once, phase B): same-size model from source straight to
    stdout.
-5. **Phases D–F**, below.
+4. **Phases D–F**, below.
 
 ## Phases D–F design
 
