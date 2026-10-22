@@ -11,9 +11,15 @@ import { StepModel } from "./model.js";
 let py, model, delayMs = 0, paused = null, stopped = false;
 const post = (type, data = {}) => self.postMessage({ type, ...data });
 
-async function fetchCached(url, label) {
-  // Cache Storage keeps the ~100 MB model across visits.
-  const cache = "caches" in self ? await caches.open("pythonlm-v1") : null;
+async function fetchCached(url, label, version) {
+  // Cache Storage keeps the model across visits, under a name that changes
+  // with the model (its sha256 from the .json); older copies are deleted.
+  let cache = null;
+  if ("caches" in self) {
+    const name = `pythonlm-${version}`;
+    for (const old of await caches.keys()) if (old.startsWith("pythonlm-") && old !== name) await caches.delete(old);
+    cache = await caches.open(name);
+  }
   const hit = cache && (await cache.match(url));
   if (hit) return new Uint8Array(await hit.arrayBuffer());
   const res = await fetch(url);
@@ -75,8 +81,8 @@ async function init(config) {
   const ort = await import(config.ort + "ort.webgpu.bundle.min.mjs");
   ort.env.wasm.wasmPaths = config.ort;
   ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 1) : 1;
-  const meta = await (await fetch(config.model + "pythonlm.json")).json();
-  const bytes = await fetchCached(config.model + "pythonlm.onnx", "Downloading the model");
+  const meta = await (await fetch(config.model + "pythonlm.json", { cache: "no-cache" })).json();
+  const bytes = await fetchCached(config.model + "pythonlm.onnx", "Downloading the model", (meta.onnx_sha256 || "dev").slice(0, 16));
 
   // Each backend must reproduce the reference answers; of those that do, the
   // faster one on the self-test wins (a model this small is often faster on

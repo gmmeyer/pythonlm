@@ -160,7 +160,17 @@ def cmd_export(a):
     if a.fp16:
         n = fp16_weights(a.out, a.out)
         print(f"{n} weight tensors stored in fp16")
-    print(f"wrote {a.out} ({os.path.getsize(a.out) / 1e6:.1f} MB) and its .json")
+    # the page keys its cached copy of the model on this
+    import hashlib
+    with open(a.out, "rb") as f:
+        digest = hashlib.sha256(f.read()).hexdigest()
+    meta_path = os.path.splitext(a.out)[0] + ".json"
+    with open(meta_path) as f:
+        meta = json.load(f)
+    meta["onnx_sha256"] = digest
+    with open(meta_path, "w") as f:
+        json.dump(meta, f)
+    print(f"wrote {a.out} ({os.path.getsize(a.out) / 1e6:.1f} MB, sha256 {digest[:12]}) and its .json")
 
 
 class OrtModel:
