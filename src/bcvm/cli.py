@@ -159,6 +159,12 @@ def cmd_gate(a):
     return 0
 
 
+def cmd_export(a):
+    from .train import export
+    export.cmd_export(a)
+    return 0
+
+
 def main(argv=None):
     from . import train
     p = argparse.ArgumentParser(prog="bcvm", description=__doc__)
@@ -234,6 +240,11 @@ def main(argv=None):
     s = sub.add_parser("gate", help="end-to-end stdout match of a checkpoint on an eval set's scripts")
     train.add_gate_args(s)
     s.set_defaults(fn=cmd_gate)
+
+    s = sub.add_parser("export", help="ONNX export with an explicit KV cache, for the web demo (needs --extra export)")
+    s.add_argument("ckpt")
+    s.add_argument("out", help="path of the .onnx file; a .json sidecar is written next to it")
+    s.set_defaults(fn=cmd_export)
 
     a = p.parse_args(argv)
     return a.fn(a)

@@ -51,6 +51,8 @@ class OutputGrammar:
             if not digits:
                 return list(_DIGITS)
             out = list(_DIGITS) if len(digits) < MAX_INT_DIGITS else []
+            if len(digits) == MAX_INT_DIGITS - 1:
+                out.remove("0")     # a 0 in the last place could neither end nor be followed
             can_end = not (len(digits) > 1 and digits[-1] == "0") and not (sign == "i-" and digits == ["0"])
             if can_end:
                 out += self._follow_after_value(len(self.frames) - 2)

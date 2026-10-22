@@ -138,3 +138,23 @@ def test_listing_encodes_every_argument():
     text = " ".join(tokens.enc_listing(prog))
     assert "LOAD_CONST None" in text and "STORE_NAME N0" in text and "LOAD_NAME print" in text
     assert text.endswith("LOAD_CONST None @0 @0 @9 RETURN_VALUE </code>")
+
+
+@pytest.mark.parametrize("work", [None, "//", "%"])
+def test_grammar_has_no_dead_ends(work):
+    """Random walks through the output grammar always have a token to take
+    until <eos>: a dead end would leave a decoder with nothing to emit.
+    (Walks may run long without ending: tuple values, reserved for phase D,
+    nest without a bound.)"""
+    rng = random.Random(0)
+    digits_first = [t for t in decoding._DIGITS]
+    for walk in range(300):
+        g = decoding.OutputGrammar(n_instrs=rng.randint(1, 999), n_names=rng.randint(0, 32), work=work)
+        for _ in range(3000):
+            allowed = sorted(g.allowed())
+            assert allowed, f"dead end in walk {walk}"
+            # lean towards digits and characters so ints and strings reach their limits
+            pref = [t for t in allowed if tokens.VOCAB[t] in digits_first or tokens.VOCAB[t].startswith("c:")]
+            g.feed_id(rng.choice(pref) if pref and rng.random() < 0.8 else rng.choice(allowed))
+            if g.done:
+                break
