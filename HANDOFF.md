@@ -29,7 +29,8 @@ estimate, next steps) before doing anything.**
   validator and runner loop (`harness.py`). The runner is proven end to end
   with `OracleStepper` (the reference VM behind the token interface).
 - `uv run pytest`: 106 passed (~4 s).
-- Data on the Mac at `~/work/pythonlm-data` (22 GB). The vocab hash in every
+- Data on the Mac at `~/work/pythonlm-data` (22 GB). On the Windows box it
+  goes to `E:\work\pythonlm-data` (`/mnt/e/work/pythonlm-data` in WSL). The vocab hash in every
   shard is `a25d7f2a919c12f3` (354 tokens).
   - `phaseA/train`: 1.02B tokens, 17.2M steps, 32 shards
   - `phaseB/train`: 3.01B tokens, 47.3M steps, 64 shards
@@ -109,8 +110,13 @@ Nothing is currently broken.
 **Use WSL2 (Ubuntu) on the Windows box, not native Windows.**
 `torch.compile`, Triton and FlexAttention are Linux-first; native Windows only
 has a community Triton port. rsync, memmap and uv all behave normally in WSL2,
-and CUDA passes through with the standard Windows NVIDIA driver. Keep the data
-on WSL's ext4 filesystem (`~/...`), never `/mnt/c` (9P is slow).
+and CUDA passes through with the standard Windows NVIDIA driver. The data lives
+at `E:\work\pythonlm-data` (the user's choice), which is
+`/mnt/e/work/pythonlm-data` from WSL. Set `BCVM_DATA` to that path, since the
+default is `~/work/pythonlm-data`. Training only reads ~1 MB/s of tokens, but
+WSL reads Windows drives through 9P, which has high per-read latency. If the
+loader stalls on memmap page faults, prefetch whole shards into RAM or copy
+the active phase onto WSL's ext4 filesystem.
 
 Train in **packed** mode. A group is one listing plus 16 steps from the same
 run. Feed a whole group with a block mask: a step's tokens attend to the
@@ -133,12 +139,18 @@ and a good first sanity run.
    Expect capability `(12, 0)` and `sm_120` in the arch list. If missing,
    install torch from `https://download.pytorch.org/whl/cu128` (or newer).
    Then run `uv run pytest`; expect 106 passed.
-2. **Pull the data** from the Mac (192.168.1.47, user `greg`; Remote Login is on).
-   Landing it at `~/work/pythonlm-data` matches the `BCVM_DATA` default:
+2. **Pull the data** from the Mac (192.168.1.47, user `greg`; Remote Login is on)
+   to `E:\work\pythonlm-data`. Only the data goes on E:; the repo stays at
+   `~/work/pythonlm` in WSL. Use `-rt`, not `-a`: Windows drives mounted in WSL
+   can't hold Unix permissions, so `-a` errors on chmod.
    ```bash
-   rsync -a --partial --exclude '._*' greg@192.168.1.47:work/pythonlm-data/ ~/work/pythonlm-data/
-   uv run bcvm inspect ~/work/pythonlm-data/phaseA/train/A_0000 -n 2
+   mkdir -p /mnt/e/work/pythonlm-data
+   rsync -rt --partial --progress --exclude '._*' greg@192.168.1.47:work/pythonlm-data/ /mnt/e/work/pythonlm-data/
+   echo 'export BCVM_DATA=/mnt/e/work/pythonlm-data' >> ~/.bashrc && export BCVM_DATA=/mnt/e/work/pythonlm-data
+   uv run bcvm inspect $BCVM_DATA/phaseA/train/A_0000 -n 2
    ```
+   Native Windows tools see the same data at `E:\work\pythonlm-data`
+   (`$env:BCVM_DATA = "E:\work\pythonlm-data"`).
 3. **Write `src/bcvm/train/model.py`:** decoder-only, RoPE, vocab 354,
    context 2048. Phase A start: d_model 512, 8 layers, 8 heads (~25M).
    Accept explicit `position_ids` and a FlexAttention `BlockMask`.
@@ -199,8 +211,8 @@ and a good first sanity run.
   safeguard, not an executor.
 - The user prefers concise responses. Commit and push to `gmmeyer/pythonlm`
   as work lands; that's how the Mac and the 5090 box share code.
-- Data (22 GB) is never committed. It moves by rsync, and can be regenerated
-  deterministically from seeds.
+- Data (22 GB) is never committed. It moves by rsync to `E:\work\pythonlm-data`
+  on the Windows box, and can be regenerated deterministically from seeds.
 - Open decisions, with recommendations in `PLAN.md`: learn the final
   traceback line before phase D; keep builtins learned, not dispatched to
   real Python.
