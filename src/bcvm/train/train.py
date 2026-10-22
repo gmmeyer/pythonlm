@@ -19,6 +19,12 @@ from .data import EvalSet, TrainStream, batches, pack, phase_dir
 from .model import ModelConfig, StepModel, packed_block_mask
 
 
+def cap_gpu_memory(fraction=0.9):
+    """Under WDDM (Windows, WSL2) running out of GPU memory doesn't raise: the
+    driver spills into system RAM and everything crawls. Raise OOM instead."""
+    torch.cuda.set_per_process_memory_fraction(fraction)
+
+
 def to_device(batch, dev):
     return {k: v.to(dev, non_blocking=True) for k, v in batch.items()}
 
@@ -109,6 +115,7 @@ def save(path, model, opt, step, seen, a):
 
 def train(a):
     dev = "cuda"
+    cap_gpu_memory()
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
     out = a.out or os.path.join(config.DATA_DIR, "runs", a.name)
