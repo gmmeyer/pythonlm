@@ -254,14 +254,18 @@ pythonlm-data/
 | a3 | as a1 | format 2 (work section, `//`/`%` weighted 4×), A, 3.0B tokens, 80 min | **2.9e-4** (natural 2.6e-4, bignum 8.1e-3); `//` 0.8%, `%` 0.5% wrong, all else ~5 errors | **98.97%** (9,913); free-running 2.8e-4; 0 refusals; validator never fired |
 | a4 | a3 continued | A 70% + `train_arith` 30%, 3.0B tokens, lr 5e-4, 80 min | **7.1e-5** (natural 6.4e-5, bignum 8.0e-3); 33 wrong steps in 466K, 30 of them `//`/`%` | **99.81% (9,997): phase A gate passed** on generated scripts; free-running 6.9e-5; 0 refusals; validator never fired |
 | b1 | a4 continued | B 60% + B arith 15% + A 15% + A arith 10%, 3.0B tokens, lr 8e-4, 80 min | B: **1.4e-4** (natural 1.3e-4, long 1.2e-4, bignum 1.3e-2); 341 wrong in 2.5M: `CALL`/print 147, `%` 128, `//` 38, `LOAD_CONST` 20. Phase A after B: 1.3e-4 (a4: 7.1e-5) | B, first 4,000 scripts: **97.5%**; free-running 8.0e-5 (`%` 39, `LOAD_CONST` 23, `//` 14); 0 refusals; validator stopped 3 runs, rescued 1. Scripts of 1,000–10,000 steps: 156/156 |
-| b2 | b1 continued | same mix, 3.0B tokens, lr 5e-4 | running | |
+| b2 | b1 continued | same mix, 3.0B tokens, lr 5e-4, 80 min | B: **1.1e-4** (natural 1.2e-4, long 9.6e-5); 278 wrong: `LOAD_CONST` 141 (the `100101` script), `%` 100, `//` 25, rest ~12. Phase A after B: 6.4e-5 | B, first 4,000: **97.7%**; free-running 1.1e-4; 64 of 91 failures are the `100101` script family, without it ~99.3% |
+| b3 | b2 continued | B 45% (6.0B available) + B arith 30% + A 15% + A arith 10%, 3.0B tokens, lr 3e-4 | running | |
 
 a1 and a2 used format 1 data, now in `$BCVM_DATA/v1/`. b1's `LOAD_CONST` and
 `CALL` errors (167 of 341) all come from one held-out natural script that prints
 the constant `"read bottom to top: 100101"` in a loop: copying the string, the
 model writes `1 0 0 1` and closes the quote, losing its place in the repeated
-digit pattern (`scripts/step_errors.py`). A copying weakness, not arithmetic;
-it will matter more in phase C. a3's remaining errors
+digit pattern (`scripts/step_errors.py`). It is held-out natural base
+`b5_018`, and 76 of the first 5,008 `eval_test` scripts are its variants
+(the perturbation changes `n`, not the string), so one hard base is ~1.5% of
+the gate. A copying weakness, not arithmetic, and it will matter more in
+phase C: the `copy` source (below) targets it. a3's remaining errors
 are in the work section's quotient digits, concentrated on divisors 11 and
 13 (13–26% wrong; every divisor ≤ 10 is ~0%), which the `arith` source covers.
 
@@ -306,7 +310,10 @@ What a1 says:
   `arith` source (the grammar with `*`, `//`, `%` dominant and divisors
   spread over 1–99; division 17% of sampled steps), to mix in with
   `--data A=0.7,A/train_arith=0.3`; likewise `phaseB/train_arith` and
-  `phaseC/train_arith`, 2.02B tokens each.
+  `phaseC/train_arith`, 2.02B tokens each. Phase B train now has 6.02B
+  tokens (shards 64–127 added). `phaseB/train_copy`: 1.03B tokens from the
+  `copy` source, the grammar with most string literals repetitive patterns
+  over small alphabets (`100101`, `abaab`, `ACGT…`), for b4.
 
 ## Next steps
 
