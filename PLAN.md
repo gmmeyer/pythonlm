@@ -252,7 +252,8 @@ pythonlm-data/
 | a1 | 26.1M: 8 layers × 512, 8 heads | A, 1.0B tokens, one pass, lr 1e-3 cosine, 27 min | 4.8e-3 (natural 5.4e-3, bignum 1.2e-2) | 85.1%; free-running step err 4.4e-3; 0 refusals; validator fired 6× |
 | a2-16L | 51.8M: 16 layers × 512 | same recipe, 1.0B tokens, 52 min (317K tok/s) | 4.4e-3: only 9% better, same `//` and `%` errors | not run |
 | a3 | as a1 | format 2 (work section, `//`/`%` weighted 4×), A, 3.0B tokens, 80 min | **2.9e-4** (natural 2.6e-4, bignum 8.1e-3); `//` 0.8%, `%` 0.5% wrong, all else ~5 errors | **98.97%** (9,913); free-running 2.8e-4; 0 refusals; validator never fired |
-| a4 | a3 continued | A 70% + `train_arith` 30%, 3.0B tokens, lr 5e-4 | running | |
+| a4 | a3 continued | A 70% + `train_arith` 30%, 3.0B tokens, lr 5e-4, 80 min | **7.1e-5** (natural 6.4e-5, bignum 8.0e-3); 33 wrong steps in 466K, 30 of them `//`/`%` | **99.81% (9,997): phase A gate passed** on generated scripts; free-running 6.9e-5; 0 refusals; validator never fired |
+| b1 | a4 continued | B 60% + B arith 15% + A 15% + A arith 10%, 3.0B tokens, lr 8e-4 | running | |
 
 a1 and a2 used format 1 data, now in `$BCVM_DATA/v1/`. a3's remaining errors
 are in the work section's quotient digits, concentrated on divisors 11 and
@@ -302,10 +303,11 @@ What a1 says:
 
 ## Next steps
 
-1. **Phase A to the bar** (a3, format 2): until `BINARY_OP` is ~1e-4 and the
-   gate passes 99%. Then your hand-written phase A set.
-2. **Phase B**, continuing from the A checkpoint with 25% A replay
-   (`--data B=0.75,A=0.25 --init ...`), then C.
+1. **Phase A: your hand-written set.** a4 passes the generated-script gate
+   (99.81%); the design also requires 99% on ~200 scripts you write
+   (`eval/handwritten/phaseA/`), run with `bcvm run --ckpt`/a gate over them.
+2. **Phase B** (b1, from a4 with 25% A replay), then C. Phase B scripts
+   average ~250 steps vs 47 in A, so 99% stdout match needs ~4e-5 per step.
 3. **Baseline** (once, phase B): same-size model from source straight to
    stdout.
 4. **Phases D–F**, below.
