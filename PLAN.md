@@ -330,11 +330,11 @@ script with `bcvm check --bound 999 --max-steps 1000`.
 3-line script collided and was replaced. `bcvm gate <ckpt> eval/handwritten/phaseB`
 runs them.
 
-| Model | Phase A (200) | Phase B (200) |
-| --- | --- | --- |
-| a4 | 58.5% (80 validator stops) | |
-| b3 | 70.0% | 91.5% |
-| c2 (edge drill) | 88.5% | 97.0% |
+| Model | Phase A (200) | Phase B (200) | Phase C (200) |
+| --- | --- | --- | --- |
+| a4 | 58.5% (80 validator stops) | | |
+| b3 | 70.0% | 91.5% | |
+| c2 (edge drill) | 88.5% | 97.0% | 49.0% (29 validator stops) |
 
 They expose what the generated sets don't:
 
@@ -397,6 +397,29 @@ are ~2e-4 by 1.3M, and the full model already does much better than the
 probe's plain curve at equal volume (7% wrong at ~0.2M, the probe ~40%),
 so format 2 stays; if c3's extra volume leaves `s[i]` above ~1%, the walk
 becomes format 3 (regenerating phase C data and eval sets).
+
+**c2 on hand-written phase C: 49.0%**, free-running step error 1.4e-3
+(against 2.4e-3 teacher-forced on `eval_test`, so the scripts are not
+harder step for step; they are longer, ~310 steps on average). The 102
+failures:
+
+- `s[i]`: 28 of 67 state divergences (c3's walks target it).
+- **Printed text wrong with a right state, 18 scripts**: nearly all
+  `print(..., sep=...)`. Training used six separators, and the model writes
+  a familiar one (`", "`) instead of the one on the stack (`"\n"`, `"  "`,
+  `" -> "`).
+- Validator stops early in the script (stack depth one short): empty
+  strings (`""`, `s * 0`, `f""`), `a = b = ... = i = "."`, prints with
+  5–10 arguments.
+- Fixed-width text off by one or two characters: `" " * (w - len(s)) + s`,
+  table and ASCII-art rows (most of the 10 `op:+` and 4 `op:*` divergences).
+- `==`/`!=`: 8 divergences.
+
+`phaseC/train_edge4` adds all of these to the edge drill: any `sep`/`end`
+(25 common ones and random 1–4 character strings), empty strings,
+chains of 2–9 targets, padding idioms, prints of 0–10 arguments. The gate now
+stops a script at twice its reference step count + 100 (one runaway script
+decoded alone at the end made c2's phase C gate take 49 minutes).
 
 ## Next steps
 
