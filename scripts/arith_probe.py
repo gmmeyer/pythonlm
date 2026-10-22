@@ -8,6 +8,8 @@ the same StepModel. Formats for the output side:
   msb    i± r(msb)                         result most significant digit first
   work   <r0> i± q(msb) <r1> i± r(lsb)     for // and %: the quotient MSB-first
                                            as scratch, then the usual result
+  work2  as work, but % also writes the product b*q (lsb):
+         <r0> i± q(msb) <r1> i± bq(lsb) <r2> i± r(lsb), so r = a - bq is a subtraction
 
 Operands mimic the hard region of phase A: a in [-999, 999]; b with 1, 2 or 3
 digits; products bounded by 999.
@@ -29,7 +31,7 @@ from bcvm.train.train import cap_gpu_memory
 
 T = tokens.TOKEN_ID
 OPS = ["//", "%", "*", "+"]
-SEQ = 26
+SEQ = 32
 HARD_DIVISORS = {3, 6, 7, 8, 9}
 
 
@@ -59,7 +61,10 @@ def encode(op, a, b, fmt):
     inp = [T["<bos>"]] + int_toks(a) + int_toks(b) + [T[f"op:{op}"], T["=>"]]
     if fmt == "msb":
         out = int_toks(r, msb=True)
-    elif fmt == "work" and op in ("//", "%"):
+    elif fmt == "work2" and op == "%":
+        q = a // b
+        out = [T["<r0>"]] + int_toks(q, msb=True) + [T["<r1>"]] + int_toks(b * q) + [T["<r2>"]] + int_toks(r)
+    elif fmt in ("work", "work2") and op in ("//", "%"):
         out = [T["<r0>"]] + int_toks(a // b, msb=True) + [T["<r1>"]] + int_toks(r)
     else:
         out = int_toks(r)
@@ -80,7 +85,7 @@ def batch(rng, n, fmt):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--format", default="lsb", choices=["lsb", "msb", "work"])
+    p.add_argument("--format", default="lsb", choices=["lsb", "msb", "work", "work2"])
     p.add_argument("--steps", type=int, default=2000)
     p.add_argument("--batch", type=int, default=2048)
     p.add_argument("--lr", type=float, default=1e-3)
