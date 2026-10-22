@@ -1,0 +1,14 @@
+n = 45
+print("bits, low first:")
+print(n % 2)
+n //= 2
+print(n % 2)
+n //= 2
+print(n % 2)
+n //= 2
+print(n % 2)
+n //= 2
+print(n % 2)
+n //= 2
+print(n % 2)
+print(n // 2)

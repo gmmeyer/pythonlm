@@ -1,0 +1,8 @@
+print("first", end="\n\n")
+print()
+print("second", end="\n\n\n")
+print("third")
+print()
+print(end="")
+print(end="--\n")
+print("last", 1 + 1, end="\n\n")

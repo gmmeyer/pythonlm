@@ -1,0 +1,11 @@
+print("it's 42, isn't it?")
+print('she said "7 // 2 is 3"')
+print("a\tb\tc")
+print("line1\nline2")
+print("[1, 2, 3] -> {ok}")
+print('#$%&*@!~^')
+n = 8
+print(n % 3)
+print("")
+print("  leading and trailing spaces  ")
+print("semi;colon: and, comma. (3 of them)")

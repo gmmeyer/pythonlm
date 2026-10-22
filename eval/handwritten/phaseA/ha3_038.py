@@ -1,0 +1,13 @@
+print("x = x + 1")
+print('print(5)')
+print("-0")
+print("999 + 1 = 1000")
+print("a, b = b, a")
+print('7 // -2 == -4')
+print("10 % 3")
+x = 10 % 3
+print(x)
+print("(1 + 2) * 3")
+print('"""')
+print("'")
+print("#not a comment")

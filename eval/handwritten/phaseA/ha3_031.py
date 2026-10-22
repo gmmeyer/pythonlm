@@ -1,0 +1,14 @@
+s = 3
+b = 10
+print(s % b)
+print(-s % b)
+print(s % -b)
+print(-s % -b)
+print(s // b)
+print(-s // b)
+print(s // -b)
+print(-s // -b)
+print(b % s)
+print(-b % s)
+print(b // -s)
+print(-b // -s)

@@ -1,0 +1,15 @@
+m = 7
+n = 2
+print(m // n)
+print(-m // n)
+print(m // -n)
+print(-m // -n)
+k = 1
+print(k // n)
+print(-k // n)
+print(k // -n)
+print(-k // -n)
+w = 0
+print(w // n)
+print(w // -n)
+print(-w // n)

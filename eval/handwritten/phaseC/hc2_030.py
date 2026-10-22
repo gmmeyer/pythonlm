@@ -1,0 +1,20 @@
+D = "0123456789"
+x = "478"
+y = "395"
+i = len(x) - 1
+carry = 0
+out = ""
+while i >= 0:
+    a = 0
+    while D[a] != x[i]:
+        a += 1
+    b = 0
+    while D[b] != y[i]:
+        b += 1
+    t = a + b + carry
+    out = D[t % 10] + out
+    carry = t // 10
+    i -= 1
+if carry > 0:
+    out = "1" + out
+print(x, "+", y, "=", out)

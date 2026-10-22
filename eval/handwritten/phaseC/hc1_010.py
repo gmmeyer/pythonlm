@@ -1,0 +1,11 @@
+print("C", "F", sep="  ->  ")
+c = -10
+while c <= 30:
+    f = c * 9 // 5 + 32
+    note = ""
+    if c <= 0:
+        note = " (freezing)"
+    elif c >= 30:
+        note = " (hot)"
+    print(f"{c}C = {f}F{note}")
+    c += 10

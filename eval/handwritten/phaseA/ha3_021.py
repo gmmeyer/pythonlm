@@ -1,0 +1,15 @@
+x = 13
+print(x % x)
+print(-x % x)
+print(x % -x)
+print(0 % x)
+print(0 % -x)
+print(0 // x)
+print(0 // -x)
+print(x - x)
+print(-x + x)
+print(x * 0)
+print(-x * 0)
+z = x - 13
+print(z * -1)
+print(-z)

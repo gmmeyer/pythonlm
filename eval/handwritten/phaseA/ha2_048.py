@@ -1,0 +1,9 @@
+n = 463
+print(n // 120)
+n %= 120
+print(n // 24)
+n %= 24
+print(n // 6)
+n %= 6
+print(n // 2)
+print(n % 2)

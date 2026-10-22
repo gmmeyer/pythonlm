@@ -1,0 +1,10 @@
+print("x =")
+x = 12
+print(x)
+print("x // 5 =")
+print(x // 5)
+print("x % -5 =")
+print(x % -5)
+print("-x // 5 =")
+print(-x // 5)
+print("done: 100%")

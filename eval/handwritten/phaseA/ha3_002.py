@@ -1,0 +1,12 @@
+x = 17
+y = 5
+print(x % y)
+print(-x % y)
+print(x % -y)
+print(-x % -y)
+print(-(x % y))
+print(-(x % -y))
+z = 15
+print(z % y)
+print(-z % y)
+print(z % -y)
