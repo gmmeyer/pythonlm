@@ -24,9 +24,9 @@ from .values import LimitExceeded, Unsupported
 TRIVIAL = {"RESUME", "NOP", "NOT_TAKEN", "EXTENDED_ARG"}
 
 DEFAULT_MIX = {
-    "A": {"grammar": 0.70, "template": 0.15, "natural": 0.15},
-    "B": {"grammar": 0.55, "template": 0.25, "natural": 0.20},
-    "C": {"grammar": 0.55, "template": 0.20, "natural": 0.25},
+    "A": {"grammar": 0.75, "template": 0.15, "natural": 0.10},
+    "B": {"grammar": 0.60, "template": 0.25, "natural": 0.15},
+    "C": {"grammar": 0.60, "template": 0.20, "natural": 0.20},
 }
 
 HELD_OUT_PER_MILLE = {"val": 5, "test": 5}       # generated scripts, by listing hash
