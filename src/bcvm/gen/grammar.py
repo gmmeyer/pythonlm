@@ -34,7 +34,7 @@ def _in_bound(v):
 
 
 class Gen:
-    def __init__(self, rng, phase, arith=False, copy=False):
+    def __init__(self, rng, phase, arith=False, copy=False, edge=False):
         self.rng = rng
         self.phase = phase
         # arith: a drill for the hardest steps, with * // % dominant and
@@ -42,6 +42,10 @@ class Gen:
         self.arith = arith
         # copy: a drill where most string literals are repetitive patterns
         self.copy = copy
+        # edge: a drill of patterns the standard mix rarely makes and people
+        # write: and/or used for their int value, chained comparisons with any
+        # operators, range steps up to 25, scripts full of distinct labels
+        self.edge = edge
         self.op_weights = [10, 8, 22, 30, 30] if arith else [30, 25, 18, 13, 14]
         self.B = phase >= "B"
         self.C = phase >= "C"
@@ -187,6 +191,11 @@ class Gen:
             other = self.str_expr(shallow=True)
             op = rng.choice(["==", "!=", "==", "<", ">"])
             return Expr(f"{s} {op} {_wrap(other, CMP + 1)}", CMP, None, "bool")
+        if self.edge and self.chance(0.35):
+            parts = [self.int_expr(1, 2) if self.chance(0.4) else self.int_leaf() for _ in range(rng.randint(3, 4))]
+            src = _wrap(parts[0], CMP + 1) + "".join(
+                f" {rng.choice(['<', '<=', '==', '!=', '>', '>='])} {_wrap(p, CMP + 1)}" for p in parts[1:])
+            return Expr(src, CMP, None, "bool")
         a = self.int_expr(1, 2)
         if self.chance(0.12):
             lo = self.int_literal()
@@ -323,7 +332,7 @@ class Gen:
         r = rng.random()
         if r < 0.04:
             self.emit(depth, "print()")
-        elif r < (0.65 if self.copy else 0.20):
+        elif r < (0.65 if self.copy else 0.35 if self.edge else 0.20):
             self.emit(depth, f"print({self.str_literal_expr().src})")
         elif self.B and r < 0.30:
             self.emit(depth, f"print({self.cond().src})")
@@ -421,6 +430,28 @@ class Gen:
         self.emit(depth, f"{name} = {e.src}")
         self.set_var(name, "str", e.val)
 
+    def logic_value(self, depth=0):
+        """and/or used for their value, with int operands: `a or 7`, `n and n - 1 or 9`."""
+        if depth >= 2 or self.chance(0.35):
+            return Expr("0", ATOM, 0, "int") if self.chance(0.25) else self.int_expr(1, 2)
+        op = self.rng.choice(["and", "or"])
+        a, b = self.logic_value(depth + 1), self.logic_value(depth + 1)
+        prec = AND if op == "and" else OR
+        return Expr(f"{_wrap(a, prec)} {op} {_wrap(b, prec, right=True)}", prec, None, "int")
+
+    def logic_stmt(self, depth):
+        r = self.rng.random()
+        if r < 0.45:
+            name = self.fresh_or_existing("int")
+            e = self.logic_value()
+            self.emit(depth, f"{name} = {e.src}")
+            self.set_var(name, "int", None)
+        elif r < 0.85:
+            self.emit(depth, f"print({self.logic_value().src})")
+        else:
+            ints = self.vars_of("int")
+            self.emit(depth, f"print(not {self.rng.choice(ints) if ints else self.int_literal().src})")
+
     def ifexp_assign(self, depth):
         name = self.fresh_or_existing("int")
         c = self.cond()
@@ -435,6 +466,8 @@ class Gen:
             weights.update(bool=6, ifexp=3, passs=1)
         if self.C:
             weights.update(str=35, print=40)
+        if self.edge and self.B:
+            weights.update(logic=25)
         if self.chance(0.02):
             e = self.int_expr(1, 2)
             self.emit(depth, e.src)  # expression statement, value discarded
@@ -450,6 +483,8 @@ class Gen:
             self.assign_str(depth)
         elif kind == "ifexp":
             self.ifexp_assign(depth)
+        elif kind == "logic":
+            self.logic_stmt(depth)
         else:
             self.emit(depth, "pass")
 
@@ -506,6 +541,12 @@ class Gen:
     def range_args(self):
         rng = self.rng
         r = rng.random()
+        if self.edge and r < 0.5:
+            step = rng.randint(1, 25) * rng.choice([1, 1, -1])
+            n = rng.randint(0, 10)
+            a = rng.randint(-100, 400)
+            b = a + step * n + (rng.randint(0, abs(step) - 1) * (1 if step > 0 else -1))
+            return f"{a}, {b}, {step}", n + 1
         if r < 0.4:
             n = rng.randint(0, 10)
             return f"{n}", n
@@ -612,5 +653,5 @@ class Gen:
         return "\n".join(self.lines) + "\n"
 
 
-def generate(rng, phase, arith=False, copy=False):
-    return Gen(rng, phase, arith, copy).script()
+def generate(rng, phase, arith=False, copy=False, edge=False):
+    return Gen(rng, phase, arith, copy, edge).script()

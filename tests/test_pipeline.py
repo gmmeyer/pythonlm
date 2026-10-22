@@ -69,3 +69,15 @@ def test_copy_source_has_repetitive_strings():
     assert sum(any(p in s for p in ("0101", "1010", "abab", "baba", "0110", "1001")) for s in srcs) >= 5
     # the default generator is unchanged, so eval sets rebuild identically
     assert grammar.generate(random.Random(3), "B") == grammar.generate(random.Random(3), "B", copy=False)
+
+
+def test_edge_source_has_value_logic_chains_and_steps():
+    import random
+    import re
+    from bcvm.gen import grammar, make
+    rng = random.Random(4)
+    text = "\n".join(make(rng, "B", "edge")[0] for _ in range(150))
+    assert re.search(r"print\([^)]*\b(and|or)\b", text)
+    assert re.search(r"range\([^,]+,[^,]+,\s*-?(1[1-9]|2[0-5])\)", text)
+    assert len(re.findall(r"(?m)^.*([<>]=?|[!=]=)[^<>=!\n]+([<>]=?|[!=]=)[^<>=!\n]+([<>]=?|[!=]=)", text)) >= 3
+    assert grammar.generate(random.Random(3), "B") == grammar.generate(random.Random(3), "B", edge=False)
