@@ -137,7 +137,20 @@ def cmd_bench(a):
     return 0
 
 
+def cmd_train(a):
+    from .train import train
+    train.train(a)
+    return 0
+
+
+def cmd_evalsteps(a):
+    from .train import train
+    train.evalsteps(a)
+    return 0
+
+
 def main(argv=None):
+    from . import train
     p = argparse.ArgumentParser(prog="bcvm", description=__doc__)
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -198,6 +211,14 @@ def main(argv=None):
     s.add_argument("--seed", type=int, default=0)
     s.add_argument("--records", default="full", choices=["full", "light", ""])
     s.set_defaults(fn=cmd_bench)
+
+    s = sub.add_parser("train", help="train the step model on packed shards (5090 box)")
+    train.add_train_args(s)
+    s.set_defaults(fn=cmd_train)
+
+    s = sub.add_parser("evalsteps", help="teacher-forced per-step exact match of a checkpoint, by opcode")
+    train.add_evalsteps_args(s)
+    s.set_defaults(fn=cmd_evalsteps)
 
     a = p.parse_args(argv)
     return a.fn(a)
