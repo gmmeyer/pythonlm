@@ -14,9 +14,10 @@ volume estimate, and what comes next.
 | Validator + runner loop with resampling | Done, exercised end to end with an oracle stepper (the reference VM behind the token interface) |
 | Script sources: grammar, templates, natural | Done for A–C. 1,020 natural scripts written by Claude subagents (`natural/`) |
 | Data pipeline (multiprocess, sharded, resumable) | Done |
-| Phase A data | 1.02B tokens, 17.2M steps, 1.08M scripts |
-| Phase B, C data | 3B tokens each (see manifest in each data dir) |
-| Eval sets (test / natural / long / bignum) | Builder done; built for A–C |
+| Phase A data | 1.02B tokens, 17.2M steps, 1.08M scripts, 2.8 GB |
+| Phase B data | 3.01B tokens, 47.3M steps, 2.96M scripts, 9.0 GB |
+| Phase C data | 3.01B tokens, 31.4M steps, 1.96M scripts, 8.3 GB |
+| Eval sets (test / natural / long / bignum) | Built for A–C, see below |
 | Hand-written eval set | **Yours to write**, see `eval/handwritten/README.md` |
 | Trainer, model stepper, KV-cached runner | Next, on the 5090 machine |
 | Phases D–F | Designed below; vocabulary already reserves their tokens |
@@ -55,6 +56,10 @@ later means regenerating data, which takes minutes.
 - `FOR_ITER`'s listing argument is where execution lands on exhaustion (the
   instruction after `END_FOR`), because 3.14 skips `END_FOR`. Range iterators
   are `RANGE_IT next stop step`.
+- `EXTENDED_ARG` prefixes are folded into the instruction they extend, like
+  inline caches. They only widen the next argument, which `dis` already
+  merges, and as real steps they were ~0.001% of the data, too rare to learn.
+  The differential check drops CPython's events for them.
 - `<out> ... </out>` appears only on steps that print. Loss starts after `=>`.
 - The run ends when ip reaches the module's `RETURN_VALUE`; the harness stops
   there, so the model never predicts it.
@@ -73,7 +78,7 @@ at *every* instruction, the executed byte offset and every user name's
 value, plus stdout and the exception type. The stack isn't visible from
 Python but determines all of those, so stack bugs surface within a few steps.
 A mismatch aborts generation and writes the script to `MISMATCH/`. So far:
-zero mismatches over ~10M scripts.
+zero mismatches. The final A–C datasets alone checked 7.2M scripts.
 
 **Validator.** `dis.stack_effect()` turned out wrong for 3.14's `FOR_ITER` on
 exhaustion (it assumes `END_FOR` runs). The validator uses its own effect
@@ -143,9 +148,9 @@ The design's "a few billion tokens per phase" agrees.
 
 | Phase | New data (packed tokens) | Steps | Replay in the mix | Model | 5090 time per pass* |
 | --- | --- | --- | --- | --- | --- |
-| A | 1B (generated) | 17M | none | ~25M | ~45 min |
-| B | 3B (generated) | ~48M | 25% from A | 25–50M | ~3–4 h |
-| C | 3B (generated) | ~33M | 25% from A+B | ~50M | ~4–5 h |
+| A | 1B (generated) | 17.2M | none | ~25M | ~45 min |
+| B | 3B (generated) | 47.3M | 25% from A | 25–50M | ~3–4 h |
+| C | 3B (generated) | 31.4M | 25% from A+B | ~50M | ~4–5 h |
 | D lists | ~4B | ~40M | 25% | 50–100M | ~6–10 h |
 | E functions | ~6B | ~50M | 25% | ~100M | ~12–16 h |
 | F dicts | ~3B | ~25M | 25% | ~100M | ~6–8 h |
@@ -159,7 +164,22 @@ Replay re-reads earlier phases' shards, so it needs no extra generation.
 Prefer fresh data to repeated epochs: if the held-out per-step error is
 still falling at the end of a pass, generate another 1–3B tokens (minutes).
 To resolve 1e-5 you need about 300K held-out steps with zero errors (rule of
-three); the `test` eval set for each phase has about 1M.
+three); the `test` sets have 0.47M (A), 2.5M (B) and 2.1M (C).
+
+### Eval sets (built)
+
+All scripts come from held-out splits; every step is kept, unweighted.
+Records hold source and CPython's stdout for end-to-end runs.
+
+| Set | What | A | B | C |
+| --- | --- | --- | --- | --- |
+| `eval_test` | generated, standard mix | 10K scripts / 0.47M steps | 10K / 2.5M | 10K / 2.1M |
+| `eval_natural` | variants of held-out natural bases | 3K / 0.13M | 3K / 0.90M | 3K / 0.68M |
+| `eval_long` | 1,000–10,000 executed steps | — (A has no loops) | 1K / 1.7M | 1K / 1.8M |
+| `eval_bignum` | ints up to 99,999 | 3K / 0.14M | 3K / 0.76M | 3K / 0.63M |
+
+Phase A's natural set comes from only ~14 held-out base scripts, so read it
+as a smoke test; your hand-written set is the real check.
 
 ### Disk
 
@@ -167,18 +187,20 @@ three); the `test` eval set for each phase has about 1M.
 | --- | --- | --- | --- |
 | Token shards (`.bin`, uint16) | 2.0 GB | 14 GB | 40 GB |
 | Step index (`.idx.npy`) | 0.2–0.35 GB | 2 GB | 5 GB |
-| Records (source + full state traces, zstd) | 0.5–0.9 GB | 5 GB | 15 GB |
-| **Total** | | **~21 GB** | **~60 GB** |
+| Records (source + full state traces, zstd) | 0.5–0.9 GB | 4 GB | 15 GB |
+| **Total** | | **20.1 GB (measured)** | **~60 GB** |
 
 ## Storage and transfer
 
-- **Code** → git (this repo; it's small). Push it to a remote you both can
-  reach, or `git clone ssh://GregsMacStudio.local/Users/greg/work/pythonlm`
-  from the 5090 machine.
+- **Code** → git (this repo; it's small). Remote Login is on here, so the
+  5090 machine can pull directly:
+  `git clone greg@192.168.1.47:work/pythonlm` (or push to a hosted remote).
 - **Data** → `~/work/pythonlm-data` on this Mac's SSD (override with
-  `BCVM_DATA`), then `scripts/sync_to_trainer.sh user@trainer:/data/pythonlm-data`
-  over the LAN. Re-runs only send new shards. Train from the 5090's local
-  NVMe, not a network mount: memmap random reads over SMB/NFS are slow and flaky.
+  `BCVM_DATA`). Copy it over the LAN, either pulled from the 5090 machine:
+  `rsync -a --partial --exclude '._*' greg@192.168.1.47:work/pythonlm-data/ /data/pythonlm-data/`,
+  or pushed from here: `scripts/sync_to_trainer.sh user@trainer:/data/pythonlm-data`.
+  Re-runs only send new shards. Train from the 5090's local NVMe, not a
+  network mount: memmap random reads over SMB/NFS are slow and flaky.
 - **Not git or Git LFS** for data: 21–60 GB of binary shards, regenerable
   from seeds in minutes.
 - **The USB drive** (exFAT, readable on Linux and Windows) is fine as a backup
