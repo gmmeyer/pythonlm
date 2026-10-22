@@ -83,9 +83,41 @@ def export(model, path):
     )
     meta = dict(n_layers=cfg.n_layers, n_heads=cfg.n_heads, head_dim=cfg.d_model // cfg.n_heads,
                 max_pos=cfg.max_pos, vocab_size=cfg.vocab_size, vocab=list(tokens.VOCAB),
-                vocab_hash=tokens.VOCAB_HASH)
+                vocab_hash=tokens.VOCAB_HASH, selftest=selftest(wrapped))
     with open(os.path.splitext(path)[0] + ".json", "w") as f:
         json.dump(meta, f)
+
+
+SELFTEST_SCRIPTS = [
+    "n = 487\nprint(n // 13, n % 13)\n",
+    "total = 0\nfor k in range(1, 6):\n    if k % 2:\n        total += k * k\nprint(total)\n",
+    "s = 'racecar'\nok = True\nfor i in range(len(s)):\n    if s[i] != s[-1 - i]:\n        ok = False\nprint(s, ok, sep=' -> ')\n",
+]
+
+
+def selftest(step):
+    """Known answers for the browser to check a backend against: a few steps
+    of fixed scripts, with PyTorch's argmax at every output position."""
+    from .. import refvm, support
+    from ..program import Program
+    cases = []
+    for src in SELFTEST_SCRIPTS:
+        prog = Program(src)
+        support.check(prog, "C")
+        trace = refvm.run(prog)
+        listing = tokens.ids(["<bos>"] + tokens.enc_listing(prog))
+        e = empty_cache(step.model.cfg)
+        with torch.no_grad():
+            _, pk, pv = step(torch.tensor([listing]), torch.arange(len(listing))[None], *e, *e)
+            for i in sorted({0, trace.steps // 2, trace.steps - 1}):
+                st, nxt = trace.states[i], trace.states[i + 1]
+                seq = tokens.ids(tokens.enc_step(st, nxt, trace.outs[i], tokens.enc_work(prog.instrs[st.ip], st)))
+                pos = torch.arange(len(listing), len(listing) + len(seq))[None]
+                logits = step(torch.tensor([seq]), pos, pk, pv, *e)[0][0]
+                start = seq.index(tokens.TOKEN_ID["=>"])
+                cases.append(dict(listing=listing, step=seq, start=start,
+                                  expect=logits[start:].argmax(-1).tolist()))
+    return cases
 
 
 def ort_session(path):

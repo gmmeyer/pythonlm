@@ -24,6 +24,7 @@ import copy
 from . import harness, refvm, support, tokens
 from .decoding import OutputGrammar
 from .program import CompileError, Program
+from .values import NULL, Builtin, RangeIter, RangeObj
 
 V = tokens.VOCAB_SIZE
 EOS = tokens.TOKEN_ID["<eos>"]
@@ -213,10 +214,44 @@ async def run(src, phase, model, candidates=3, max_steps=10_000, on_step=None, s
         st, printed = accepted
         res.stdout += printed
         if on_step is not None:
-            on_step(res.steps, st, printed)
+            r = on_step(res.steps, st, printed)
+            if hasattr(r, "__await__"):     # the page pauses, slows down or stops a run here
+                await r
         res.steps += 1
         stats.steps += 1
     return res
+
+
+def show(v):
+    """A value as the page shows it: Python's repr, plus names for the
+    interpreter's own objects."""
+    if isinstance(v, Builtin):
+        return f"<built-in {v.name}>"
+    if isinstance(v, RangeObj):
+        return f"range({v.start}, {v.stop}, {v.step})"
+    if isinstance(v, RangeIter):
+        return f"<range iterator: next {v.next}>"
+    return "NULL" if v is NULL else repr(v)
+
+
+def _arg(prog, ins):
+    a = ins.arg
+    if isinstance(a, tuple) and len(a) == 2 and a[0] in ("N", "B"):
+        return prog.names[a[1]] if a[0] == "N" else a[1]
+    if ins.opname.startswith(("JUMP", "POP_JUMP", "FOR_ITER")):
+        return f"to {a}"
+    return "" if a is None else (repr(a) if isinstance(a, str) and ins.opname == "LOAD_CONST" else str(a))
+
+
+def listing_view(prog):
+    """The listing as the page shows it: index, source line, opcode, readable argument."""
+    return [[ins.index, ins.line, ins.opname, _arg(prog, ins)] for ins in prog.instrs]
+
+
+def state_view(prog, st):
+    """A state with the script's own variable names, values as Python reprs."""
+    return {"ip": st.ip, "stack": [show(v) for v in st.stack],
+            "vars": [[prog.names[k], show(st.names[k])] for k in sorted(st.names)]}
 
 
 class JsModel:

@@ -8,3 +8,4 @@ __pycache__/
 !tests/fixtures/*.bin
 .DS_Store
 ._*
+/web/dist/
