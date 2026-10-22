@@ -58,8 +58,7 @@ def evaluate(model, directory, seq_len, rows, max_steps=None):
     n = len(ev.opcode)
     wrong = wrong[:n].cpu().numpy() > 0
     opcode, prints = np.array(ev.opcode), np.array(ev.prints)
-    by_op = {tokens.VOCAB[op]: [int((opcode == op).sum()), int(wrong[opcode == op].sum())]
-             for op in np.unique(opcode)}
+    by_op = {str(op): [int((opcode == op).sum()), int(wrong[opcode == op].sum())] for op in np.unique(opcode)}
     return dict(set=directory, steps=n, step_errors=int(wrong.sum()), step_err=float(wrong.mean()),
                 tok_err=tok_bad.item() / max(1, tok_n.item()), loss=loss.item() / max(1, tok_n.item()),
                 print_steps=[int(prints.sum()), int(wrong[prints].sum())], by_opcode=by_op)

@@ -254,11 +254,20 @@ class ModelStepper:
         if self.diverged is None:
             st, _ = tokens.parse_state(state_tokens)
             if self.expect is not None and not st.same(self.expect):
-                self.diverged = (self.steps - 1, prog.instrs[self.prev_ip].opname)
+                self.diverged = (self.steps - 1, _kind(prog.instrs[self.prev_ip]))
             else:
                 self.expect, _ = refvm.step(prog, st)
                 self.prev_ip = st.ip
         self.steps += 1
+
+
+def _kind(ins):
+    """Same labels as data.step_kind: the opcode, with its operator for BINARY_OP and COMPARE_OP."""
+    if ins.opname == "BINARY_OP":
+        return f"BINARY_OP op:{ins.arg}"
+    if ins.opname == "COMPARE_OP":
+        return f"COMPARE_OP cmp:{ins.arg}"
+    return ins.opname
 
 
 # ---------------------------------------------------------------- gate

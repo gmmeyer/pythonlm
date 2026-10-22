@@ -7,14 +7,16 @@ the supported subset are refused up front.
 - `docs/DESIGN.md`: the design
 - `PLAN.md`: what's built, decisions, data estimate, next steps
 
-This repo is the harness and the data pipeline (runs on the Mac Studio). The
-trainer and model stepper run on the 5090 machine and plug into
-`bcvm.harness.run` and `bcvm.shards`.
+This repo is the harness and the data pipeline (data generated on the Mac
+Studio), plus the trainer and model stepper (`bcvm.train`, run on the 5090
+box under WSL2, `uv sync --extra train`).
 
 ```bash
 uv sync && uv run pytest
 uv run bcvm run natural/phaseB/b1_000.py          # runner with the oracle stepper
 uv run bcvm gen --phase A --tokens 1e9            # -> ~/work/pythonlm-data/phaseA/train
+uv run bcvm train --name a1 --data A=1 --tokens 1e9            # -> $BCVM_DATA/runs/a1
+uv run bcvm gate $BCVM_DATA/runs/a1/final.pt phaseA/eval_test  # end-to-end stdout match
 ```
 
 ## Layout
@@ -34,6 +36,7 @@ src/bcvm/
   pipeline.py    generate -> check -> sample -> tokenize -> shards
   shards.py      shard writer and reference readers
   evalsets.py    held-out eval sets
+  train/         model, packed loader, trainer, model stepper + gate (torch)
 natural/         LLM-written natural scripts per phase (+ SPEC.md)
 eval/handwritten/  your hand-written eval scripts (to write)
 scripts/sync_to_trainer.sh

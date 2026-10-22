@@ -160,10 +160,22 @@ def step_ip(toks):
     return int(toks[2] - ADDR0) * 100 + int(toks[3] - ADDR0) * 10 + int(toks[4] - ADDR0)
 
 
+_WITH_OPERATOR = {tokens.TOKEN_ID["BINARY_OP"], tokens.TOKEN_ID["COMPARE_OP"]}
+
+
+def step_kind(listing, op_pos, ip):
+    """The instruction at ip, e.g. 'STORE_NAME', or 'BINARY_OP op://' with its operator."""
+    p = op_pos[ip]
+    op = int(listing[p])
+    if op in _WITH_OPERATOR:
+        return f"{tokens.VOCAB[op]} {tokens.VOCAB[listing[p + 1]]}"
+    return tokens.VOCAB[op]
+
+
 class EvalSet:
     """Every step of an eval set's shards, in order. Iterating groups() also
-    records each step's opcode (the instruction at the input ip) and whether
-    it prints."""
+    records each step's kind (the instruction at the input ip, see step_kind)
+    and whether it prints."""
 
     def __init__(self, directory, max_steps=None):
         self.stems = list_shards(directory)
@@ -186,9 +198,9 @@ class EvalSet:
                 steps = steps[:self.max_steps - sid]
                 if not steps:
                     return
-                ops = listing[np.isin(listing, OPCODE_IDS)]
+                op_pos = np.flatnonzero(np.isin(listing, OPCODE_IDS))
                 for toks, _ in steps:
-                    self.opcode.append(int(ops[step_ip(toks)]))
+                    self.opcode.append(step_kind(listing, op_pos, step_ip(toks)))
                     self.prints.append(bool((toks == OUT).any()))
                 yield listing, steps, sid
                 sid += len(steps)

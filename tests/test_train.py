@@ -94,8 +94,9 @@ def test_evalset_opcodes(shard, tmp_path):
     ev = EvalSet(str(tmp_path))
     groups = list(ev.groups())
     assert len(ev.opcode) == ev.max_steps == len(Shard(shard))
-    names = {tokens.VOCAB[o] for o in ev.opcode}
+    names = {k.split()[0] for k in ev.opcode}
     assert names <= set(tokens.OPCODES) and "RETURN_VALUE" not in names
+    assert any(k.startswith("BINARY_OP op:") for k in ev.opcode)
     assert sum(ev.prints) > 0
     assert sum(len(s) for _, s, _ in groups) == ev.max_steps
 

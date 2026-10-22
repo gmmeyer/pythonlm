@@ -19,7 +19,8 @@ volume estimate, and what comes next.
 | Phase C data | 3.01B tokens, 31.4M steps, 1.96M scripts, 8.3 GB |
 | Eval sets (test / natural / long / bignum) | Built for A–C, see below |
 | Hand-written eval set | **Yours to write**, see `eval/handwritten/README.md` |
-| Trainer, model stepper, KV-cached runner | Next, on the 5090 machine |
+| Trainer (packed, FlexAttention) | Done: `bcvm train`, `bcvm evalsteps`. Measured 632K tok/s at 26M params |
+| Model stepper, KV-cached batched runner | Done: `bcvm gate`, `bcvm run --ckpt` |
 | Phases D–F | Designed below; vocabulary already reserves their tokens |
 
 `uv run pytest` runs 106 tests (≈4 s).
@@ -148,17 +149,19 @@ The design's "a few billion tokens per phase" agrees.
 
 | Phase | New data (packed tokens) | Steps | Replay in the mix | Model | 5090 time per pass* |
 | --- | --- | --- | --- | --- | --- |
-| A | 1B (generated) | 17.2M | none | ~25M | ~45 min |
-| B | 3B (generated) | 47.3M | 25% from A | 25–50M | ~3–4 h |
-| C | 3B (generated) | 31.4M | 25% from A+B | ~50M | ~4–5 h |
-| D lists | ~4B | ~40M | 25% | 50–100M | ~6–10 h |
-| E functions | ~6B | ~50M | 25% | ~100M | ~12–16 h |
-| F dicts | ~3B | ~25M | 25% | ~100M | ~6–8 h |
+| A | 1B (generated) | 17.2M | none | ~25M | 27 min (measured) |
+| B | 3B (generated) | 47.3M | 25% from A | 25–50M | ~1.3–2.5 h |
+| C | 3B (generated) | 31.4M | 25% from A+B | ~50M | ~2.5 h |
+| D lists | ~4B | ~40M | 25% | 50–100M | ~3.5–7 h |
+| E functions | ~6B | ~50M | 25% | ~100M | ~10 h |
+| F dicts | ~3B | ~25M | 25% | ~100M | ~5 h |
 | **Total** | **~20B tokens** | **~210M steps** | | | |
 
-\*At the design's 70 TFLOPS achieved and ~6 FLOPs per parameter per token,
-in packed mode. Expanded mode costs ~5× more. Replace with a measured number
-after the first run.
+\*Measured on the 5090 (WSL2, torch 2.14.1, bf16, compiled FlexAttention):
+the 26.1M model trains at 632K packed tokens/s, ~97 TFLOPS counting 6N only
+(attention excluded), with 12.5 GB peak memory at 64K tokens per micro-batch.
+Other rows scale that rate by model size; bigger models should use the GPU
+somewhat better. Expanded mode would cost ~5× more.
 
 Replay re-reads earlier phases' shards, so it needs no extra generation.
 Prefer fresh data to repeated epochs: if the held-out per-step error is
@@ -281,5 +284,10 @@ uv run bcvm gen --phase B --tokens 3e9 --shard-tokens 4.7e7   # resumable
 uv run bcvm evalset --phase B --name test --scripts 10000
 uv run bcvm inspect ~/work/pythonlm-data/phaseB/train/B_0000 -n 3
 uv run bcvm bench --phase C                        # single-core throughput
+uv run --extra train bcvm train --name a1 --data A=1 --tokens 1e9            # packed training
+uv run --extra train bcvm train --name b1 --data B=0.75,A=0.25 --tokens 3e9 --init $BCVM_DATA/runs/a1/final.pt
+uv run --extra train bcvm evalsteps $BCVM_DATA/runs/a1/final.pt phaseA/eval_test   # teacher-forced, by opcode
+uv run --extra train bcvm gate $BCVM_DATA/runs/a1/final.pt phaseA/eval_test        # end-to-end stdout match
+uv run --extra train bcvm run my_script.py --ckpt $BCVM_DATA/runs/a1/final.pt
 scripts/sync_to_trainer.sh user@trainer:/data/pythonlm-data phaseA phaseB
 ```
