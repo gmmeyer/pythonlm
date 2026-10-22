@@ -244,6 +244,7 @@ def main(argv=None):
     s = sub.add_parser("export", help="ONNX export with an explicit KV cache, for the web demo (needs --extra export)")
     s.add_argument("ckpt")
     s.add_argument("out", help="path of the .onnx file; a .json sidecar is written next to it")
+    s.add_argument("--fp16", action="store_true", help="store large weights in fp16 (computed in fp32)")
     s.set_defaults(fn=cmd_export)
 
     a = p.parse_args(argv)

@@ -120,6 +120,28 @@ def selftest(step):
     return cases
 
 
+def fp16_weights(src, dst, min_size=1024):
+    """Store the large weights in fp16 (half the download) with a Cast back to
+    fp32 in front, so the graph still computes in fp32."""
+    import onnx
+    from onnx import TensorProto, helper, numpy_helper
+    m = onnx.load(src)
+    g = m.graph
+    casts = []
+    for init in g.initializer:
+        if init.data_type != TensorProto.FLOAT or int(np.prod(init.dims)) < min_size:
+            continue
+        w = numpy_helper.to_array(init).astype(np.float16)
+        name = init.name
+        init.CopyFrom(numpy_helper.from_array(w, name + "_fp16"))
+        casts.append(helper.make_node("Cast", [name + "_fp16"], [name], to=TensorProto.FLOAT))
+    nodes = casts + list(g.node)
+    del g.node[:]
+    g.node.extend(nodes)
+    onnx.save(m, dst)
+    return len(casts)
+
+
 def ort_session(path):
     import onnxruntime as ort
     return ort.InferenceSession(path, providers=["CPUExecutionProvider"])
@@ -135,6 +157,9 @@ def cmd_export(a):
     model, _ = load_model(a.ckpt, dev="cpu")
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     export(model, a.out)
+    if a.fp16:
+        n = fp16_weights(a.out, a.out)
+        print(f"{n} weight tensors stored in fp16")
     print(f"wrote {a.out} ({os.path.getsize(a.out) / 1e6:.1f} MB) and its .json")
 
 
