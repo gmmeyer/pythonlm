@@ -20,7 +20,7 @@ from .program import Program
 from .state import _same_seq, same_value
 from .values import Builtin
 
-_NO_EFFECT = {"RESUME", "NOP", "NOT_TAKEN", "EXTENDED_ARG", "JUMP_FORWARD", "JUMP_BACKWARD"}
+_NO_EFFECT = {"RESUME", "NOP", "NOT_TAKEN", "JUMP_FORWARD", "JUMP_BACKWARD"}
 _PUSH1 = {"LOAD_SMALL_INT", "LOAD_CONST", "LOAD_NAME", "PUSH_NULL", "COPY"}
 _POP1 = {"STORE_NAME", "POP_TOP", "POP_JUMP_IF_FALSE", "POP_JUMP_IF_TRUE", "END_FOR", "POP_ITER"}
 _UNARY = {"UNARY_NEGATIVE", "UNARY_NOT", "TO_BOOL", "FORMAT_SIMPLE", "GET_ITER"}

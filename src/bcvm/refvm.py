@@ -151,7 +151,7 @@ def step(prog, st):
     ip = st.ip + 1
     out = ""
 
-    if op in ("RESUME", "NOP", "NOT_TAKEN", "EXTENDED_ARG"):
+    if op in ("RESUME", "NOP", "NOT_TAKEN"):
         pass
     elif op == "LOAD_SMALL_INT" or op == "LOAD_CONST":
         stack.append(ins.arg)

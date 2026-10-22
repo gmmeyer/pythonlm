@@ -2,6 +2,9 @@
 
 The listing is what the model sees: one entry per instruction, addressed by
 instruction index (not byte offset), with user names replaced by N-indices.
+EXTENDED_ARG prefixes are folded into the instruction they extend, like
+inline cache entries: dis already merges their value into its argument, and
+CPython's only use of them is to widen that argument.
 """
 import dis
 from dataclasses import dataclass
@@ -65,15 +68,23 @@ class Program:
         self.names, self.stored = scan_names(self.code)
         self.name_index = {n: i for i, n in enumerate(self.names)}
         raw = list(dis.get_instructions(self.code))
-        self.offset_to_index = {ins.offset: i for i, ins in enumerate(raw)}
-        self.instrs = [self._convert(i, ins, raw) for i, ins in enumerate(raw)]
+        real = [ins for ins in raw if ins.opname != "EXTENDED_ARG"]
+        self.prefix_offsets = frozenset(ins.offset for ins in raw if ins.opname == "EXTENDED_ARG")
+        self.offset_to_index = {}
+        index = 0
+        for ins in raw:
+            # a prefix maps to the instruction it extends, so jumps to it land there
+            self.offset_to_index[ins.offset] = index
+            if ins.opname != "EXTENDED_ARG":
+                index += 1
+        self.instrs = [self._convert(i, ins, real) for i, ins in enumerate(real)]
 
     def name_ref(self, name):
         if name in self.name_index:
             return ("N", self.name_index[name])
         return ("B", name)
 
-    def _convert(self, i, ins, raw):
+    def _convert(self, i, ins, real):
         op = ins.opname
         if op in NAME_OPS:
             arg = self.name_ref(ins.argval)
@@ -88,13 +99,11 @@ class Program:
             if op == "FOR_ITER":
                 # On exhaustion CPython skips the END_FOR at the target, so the
                 # listing gives the index where execution actually lands.
-                if raw[arg].opname != "END_FOR":
-                    raise CompileError(f"FOR_ITER target is {raw[arg].opname}, expected END_FOR")
+                if real[arg].opname != "END_FOR":
+                    raise CompileError(f"FOR_ITER target is {real[arg].opname}, expected END_FOR")
                 arg += 1
         elif op in INT_ARG_OPS:
             arg = ins.arg
-        elif op == "EXTENDED_ARG":
-            arg = None  # dis already folds it into the next instruction's arg
         else:
             arg = None
         return Instr(i, ins.offset, op, arg, ins.line_number)

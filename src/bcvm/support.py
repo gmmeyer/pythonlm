@@ -126,7 +126,7 @@ def _transfer(ins, s, phase, name_tags):
     op, i = ins.opname, ins.index
     nxt = i + 1
     one = frozenset
-    if op in ("RESUME", "NOP", "NOT_TAKEN", "EXTENDED_ARG"):
+    if op in ("RESUME", "NOP", "NOT_TAKEN"):
         pass
     elif op == "LOAD_SMALL_INT":
         s.append(one({"int"}))

@@ -38,7 +38,8 @@ OPCODES = sorted({
     "UNARY_NEGATIVE", "PUSH_NULL", "CALL", "POP_TOP", "RETURN_VALUE", "COPY", "SWAP",
     "COMPARE_OP", "TO_BOOL", "UNARY_NOT", "POP_JUMP_IF_FALSE", "POP_JUMP_IF_TRUE",
     "JUMP_FORWARD", "JUMP_BACKWARD", "NOT_TAKEN", "GET_ITER", "FOR_ITER", "END_FOR",
-    "POP_ITER", "FORMAT_SIMPLE", "BUILD_STRING", "CALL_KW", "EXTENDED_ARG",
+    "POP_ITER", "FORMAT_SIMPLE", "BUILD_STRING", "CALL_KW",
+    "EXTENDED_ARG",  # unused: prefixes are folded into the listing; kept so the vocab hash is stable
     # reserved for phases D-F
     "BUILD_LIST", "BUILD_TUPLE", "LIST_EXTEND", "LIST_APPEND", "LOAD_ATTR", "STORE_SUBSCR",
     "UNPACK_SEQUENCE", "CONTAINS_OP", "IS_OP", "BUILD_MAP", "MAP_ADD", "DICT_UPDATE",

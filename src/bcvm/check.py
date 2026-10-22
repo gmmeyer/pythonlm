@@ -72,7 +72,9 @@ def run_cpython(prog, max_events):
     if not offsets or offsets[0] != 0:
         offsets.insert(0, 0)
         snaps.insert(0, {})
-    return CPyRun(buf.getvalue(), offsets, snaps, exc_type)
+    # EXTENDED_ARG prefixes are folded into the instruction they extend.
+    keep = [i for i, off in enumerate(offsets) if off not in prog.prefix_offsets]
+    return CPyRun(buf.getvalue(), [offsets[i] for i in keep], [snaps[i] for i in keep], exc_type)
 
 
 def _matches(ref, py):
@@ -105,4 +107,5 @@ def compare(prog, trace, cpy):
 
 
 def differential_check(prog, trace):
-    compare(prog, trace, run_cpython(prog, max_events=len(trace.states) + 10))
+    # runaway guard only; CPython also reports EXTENDED_ARG prefixes, up to 3 per instruction
+    compare(prog, trace, run_cpython(prog, max_events=4 * len(trace.states) + 10))

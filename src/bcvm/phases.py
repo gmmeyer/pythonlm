@@ -6,7 +6,7 @@ _OPCODES = {
     "A": {
         "RESUME", "NOP", "LOAD_SMALL_INT", "LOAD_CONST", "LOAD_NAME", "STORE_NAME",
         "BINARY_OP", "UNARY_NEGATIVE", "PUSH_NULL", "CALL", "POP_TOP", "RETURN_VALUE",
-        "COPY", "SWAP", "EXTENDED_ARG",
+        "COPY", "SWAP",
     },
     "B": {
         "COMPARE_OP", "TO_BOOL", "UNARY_NOT", "POP_JUMP_IF_FALSE", "POP_JUMP_IF_TRUE",

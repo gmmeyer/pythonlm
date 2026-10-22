@@ -21,7 +21,7 @@ from .program import CompileError
 from .shards import ShardWriter
 from .values import LimitExceeded, Unsupported
 
-TRIVIAL = {"RESUME", "NOP", "NOT_TAKEN", "EXTENDED_ARG"}
+TRIVIAL = {"RESUME", "NOP", "NOT_TAKEN"}
 
 DEFAULT_MIX = {
     "A": {"grammar": 0.75, "template": 0.15, "natural": 0.10},

@@ -69,7 +69,8 @@ def test_extended_arg_long_jumps():
     body = "\n".join(f"    x = x + {i}" for i in range(36))
     src = f"x = 0\nn = 2\nwhile n > 0:\n{body}\n    n -= 1\nprint(x)\n"
     prog = support.check_source(src, "B")
-    assert any(i.opname == "EXTENDED_ARG" for i in prog.instrs)
+    assert prog.prefix_offsets  # the bytecode has prefixes; the listing folds them away
+    assert not any(i.opname == "EXTENDED_ARG" for i in prog.instrs)
     trace = refvm.run(prog, max_steps=100_000, bound=10**6)
     check.differential_check(prog, trace)
 
