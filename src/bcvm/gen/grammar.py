@@ -48,7 +48,9 @@ class Gen:
         # labels ("Round 1", "Round 2", ...) that must be told apart when copied,
         # tuple assignment of two and three names (SWAP 2, SWAP 3), and scripts
         # with 11-28 names (other sources stay within N0-N9); from phase B,
-        # bools used as numbers (`t == 1`, `(not a) + (not b)`, `n += i > 0`)
+        # bools used as numbers (`t == 1`, `(not a) + (not b)`, `n += i > 0`);
+        # in phase C, loops over a string's positions (`s[i]`, `s[-1 - i]`,
+        # counting and building strings) and longer f-strings and prints
         self.edge = edge
         self.series = [rng.choice(SERIES_STEMS), rng.randint(0, 3)]
         self.op_weights = [10, 8, 22, 30, 30] if arith else [30, 25, 18, 13, 14]
@@ -299,7 +301,7 @@ class Gen:
     def fstring(self):
         rng = self.rng
         parts, srcs, known = [], [], True
-        for _ in range(rng.randint(1, 3)):
+        for _ in range(rng.randint(1, 6) if self.edge else rng.randint(1, 3)):
             if self.chance(0.7):
                 text = rng.choice(WORDS + ["=", ":", " is ", " -> ", ", ", " + ", "#"]) if self.chance(0.8) else random_text(rng, 1, 5)
                 text = "".join(ch for ch in text if ch not in '{}"\\\n\t')
@@ -325,7 +327,7 @@ class Gen:
     def print_stmt(self, depth):
         rng = self.rng
         if self.C and self.chance(0.45):
-            n = rng.randint(2, 4)
+            n = rng.randint(2, 7) if self.edge else rng.randint(2, 4)
             args = []
             for _ in range(n):
                 k = rng.random()
@@ -592,6 +594,8 @@ class Gen:
 
     def stmt(self, depth):
         rng = self.rng
+        if self.edge and self.C and self.iter_budget == 1 and self.chance(0.2):
+            return self.str_walk(depth)
         if self.B and depth < 3:
             r = rng.random() * (1 + depth)
             in_loop = bool(self.loops)
@@ -672,6 +676,99 @@ class Gen:
         self.protected.discard(var)
         if not trips:
             self.vars.pop(var, None)
+
+    # string walks: (range arguments, index expressions safe for that range)
+    WALKS = [
+        ("len({s})", ["{i}", "{i}", "-1 - {i}", "len({s}) - 1 - {i}", "{i} - 1", "-({i} + 1)", "({i} + {k}) % len({s})"]),
+        ("len({s}) - 1", ["{i}", "{i} + 1", "-1 - {i}", "{i} - 1"]),
+        ("1, len({s})", ["{i}", "{i} - 1", "-{i}"]),
+        ("len({s}) - 1, -1, -1", ["{i}", "-1 - {i}"]),
+        ("0, len({s}), {k}", ["{i}", "-1 - {i}"]),
+    ]
+
+    def str_walk(self, depth):
+        """A loop over a string's positions, the way people index strings
+        (strings are not iterable yet): `for i in range(len(s)):` with s[i],
+        s[-1 - i], s[len(s) - 1 - i], counting matches, building a string,
+        checking a palindrome; or the same as a while loop."""
+        rng = self.rng
+        strs = self.vars_of("str")
+        if not strs or self.chance(0.3):
+            s = self.fresh_or_existing("str")
+            e = self.str_literal_expr()
+            self.emit(depth, f"{s} = {e.src}")
+            self.set_var(s, "str", e.val)
+        else:
+            s = rng.choice(strs)
+        known = self.known.get(s)
+        i = self.loop_var()
+        if i in self.protected or i == s:
+            return
+        self.vars[i] = "int"    # so the names chosen below differ from it
+        self.protected.add(i)
+        use_while = self.chance(0.2)
+        rargs, idxs = self.WALKS[0] if use_while else rng.choice(self.WALKS)
+        k = rng.randint(2, 3)
+
+        def idx():
+            return f"{s}[{rng.choice(idxs).format(s=s, i=i, k=rng.randint(1, 9))}]"
+
+        def char():
+            c = rng.choice(known) if known and self.chance(0.7) else rng.choice("aeiou st.,-")
+            return repr(c)
+
+        before, body, after = [], [], []
+        for kind in rng.sample(["count", "build", "show", "pair", "palindrome"], rng.choice([1, 1, 2])):
+            if kind == "count":
+                c = self.fresh_or_existing("int")
+                before.append(f"{c} = 0")
+                body += [f"if {idx()} {rng.choice(['==', '==', '!='])} {char()}:", f"    {c} += 1"]
+                after.append(f"print({c})")
+                self.set_var(c, "int", None)
+            elif kind == "build":
+                t = self.fresh_or_existing("str")
+                if t == s:
+                    continue
+                before.append(f"{t} = " + rng.choice(["''", "''", "'>'"]))
+                body.append(rng.choice([f"{t} = {t} + {idx()}", f"{t} = {idx()} + {t}", f"{t} += {idx()}"]))
+                after.append(f"print({t})")
+                self.set_var(t, "str", None)
+            elif kind == "show":
+                body.append(rng.choice([f"print({i}, {idx()})", f"print({idx()}, end='')", f"print(f'{{{i}}}: {{{idx()}}}')",
+                                        f"print({idx()}, {idx()}, sep='')"]))
+                if "end=''" in body[-1]:
+                    after.append("print()")
+            elif kind == "pair":
+                c = self.fresh_or_existing("int")
+                before.append(f"{c} = 0")
+                body += [f"if {idx()} == {idx()}:", f"    {c} += 1"]
+                after.append(f"print({c})")
+                self.set_var(c, "int", None)
+            else:
+                f = self.fresh_or_existing("bool")
+                before.append(f"{f} = True")
+                body += [f"if {s}[{i}] != {s}[-1 - {i}]:", f"    {f} = False"]
+                after.append(f"print({f})")
+                self.set_var(f, "bool", None)
+        if not body:
+            self.protected.discard(i)
+            self.vars.pop(i, None)
+            return
+        self.enter_control_flow()
+        for line in before:
+            self.emit(depth, line)
+        if use_while:
+            self.emit(depth, f"{i} = 0")
+            self.emit(depth, f"while {i} < len({s}):")
+            body.append(f"{i} += {rng.choice([1, 1, 1, 2])}")
+        else:
+            self.emit(depth, f"for {i} in range({rargs.format(s=s, k=k)}):")
+        for line in body:
+            self.emit(depth + 1, line)
+        for line in after:
+            self.emit(depth, line)
+        self.protected.discard(i)
+        self.vars.pop(i, None)
 
     def while_stmt(self, depth):
         self.enter_control_flow()

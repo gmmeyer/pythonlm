@@ -137,3 +137,26 @@ def test_edge_source_uses_bools_as_numbers():
     assert len(re.findall(r"\(not [^()]+\) [-+*]", text)) >= 3
     assert len(re.findall(r"(?m)^\s*\w+ [-+]= (not |\w+ [<>=!]=? )", text)) >= 3
     assert len(re.findall(r"(?m)^\s*\w+ = \w+ = ", text)) >= 3
+
+
+def test_edge_source_walks_strings_in_phase_c():
+    import random
+    import re
+    from collections import Counter
+    from bcvm import pipeline
+    from bcvm.gen import make
+    rng = random.Random(10)
+    kept, idx, skips = [], Counter(), Counter()
+    for _ in range(100):
+        src, _ = make(rng, "C", "edge")
+        try:
+            prog, trace = pipeline.prepare(src, "C")
+        except pipeline.Skip as e:
+            skips[str(e)] += 1
+            continue
+        kept.append(src)
+        idx.update(re.findall(r"\w+\[([^\]]*[a-z][^\]]*)\]", src))
+    assert len(kept) >= 60, skips   # long listings and strings are filtered, as for all edge scripts
+    text = "\n".join(kept)
+    assert re.search(r"for \w+ in range\(len\(\w+\)\):", text) and re.search(r"while \w+ < len\(\w+\):", text)
+    assert sum(idx.values()) >= 100 and len(idx) >= 20
