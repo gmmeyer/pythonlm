@@ -217,3 +217,21 @@ async def run(src, phase, model, candidates=3, max_steps=10_000, on_step=None, s
         res.steps += 1
         stats.steps += 1
     return res
+
+
+class JsModel:
+    """Under Pyodide: the JS StepModel (web/model.js) behind the interface above."""
+
+    def __init__(self, js):
+        from pyodide.ffi import to_js
+        self.js, self.to_js = js, to_js
+
+    async def prefill(self, ids):
+        await self.js.prefill(self.to_js(ids))
+
+    async def forward(self, ids, masks, temperature=0):
+        res = await self.js.forward(self.to_js(ids), self.to_js(memoryview(masks)), temperature)
+        return res.to_py()
+
+    def truncate(self, n):
+        self.js.truncate(n)

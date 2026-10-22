@@ -1,13 +1,14 @@
 """ONNX export of the step model for the web demo, with the KV cache as explicit
 inputs and outputs, in two parts:
 
-    logits, k, v = f(ids [1, T], pos [1, T], prefix_k [L, H, P, D], prefix_v,
-                     step_k [L, H, S, D], step_v)
+    logits, k, v = f(ids [1, T], pos [1, T], prefix_k [P, L, H, D], prefix_v,
+                     step_k [S, L, H, D], step_v)
 
 prefix is the listing's cache (computed once per script, kept on the GPU);
-step is the current step's tokens so far (small, kept by the caller, so
-dropping rejected draft tokens is just a length). k and v are this call's
-keys and values only ([L, H, T, D]). The T new tokens attend to all P + S
+step is the current step's tokens so far (small, kept by the caller). k and v
+are this call's keys and values only ([T, L, H, D]). Caches are token-major,
+so a caller keeps the step cache as one flat array: appending is a copy at
+the end and dropping rejected draft tokens is a length. The T new tokens attend to all P + S
 cached ones and causally to each other, so one graph does the listing
 prefill (P = S = 0, keep k/v as the prefix), a step's state prefill,
 single-token decoding and multi-token draft verification. It runs StepModel's
@@ -44,18 +45,20 @@ class CachedStep(torch.nn.Module):
         self.model = model
 
     def forward(self, ids, pos, prefix_k, prefix_v, step_k, step_v):
-        T, C = ids.shape[1], prefix_k.shape[2] + step_k.shape[2]
+        T, C = ids.shape[1], prefix_k.shape[0] + step_k.shape[0]
         q = torch.arange(T, device=ids.device)[:, None]
         kv = torch.arange(C + T, device=ids.device)[None, :]
         mask = ((kv < C) | (kv - C <= q))[None, None]           # [1, 1, T, C + T]
-        cache = [_Concat(prefix_k[i:i + 1], prefix_v[i:i + 1], step_k[i:i + 1], step_v[i:i + 1])
-                 for i in range(prefix_k.shape[0])]
+        layer = lambda x, i: x[:, i].transpose(0, 1)[None]      # noqa: E731  [N, L, H, D] -> [1, H, N, D]
+        cache = [_Concat(layer(prefix_k, i), layer(prefix_v, i), layer(step_k, i), layer(step_v, i))
+                 for i in range(prefix_k.shape[1])]
         logits = self.model(ids, pos, mask, cache)
-        return logits, torch.cat([c.k for c in cache]), torch.cat([c.v for c in cache])
+        new = lambda xs: torch.cat(xs).permute(2, 0, 1, 3)      # noqa: E731  L x [1, H, T, D] -> [T, L, H, D]
+        return logits, new([c.k for c in cache]), new([c.v for c in cache])
 
 
 def empty_cache(cfg, n=0, dtype=torch.float32):
-    shape = (cfg.n_layers, cfg.n_heads, n, cfg.d_model // cfg.n_heads)
+    shape = (n, cfg.n_layers, cfg.n_heads, cfg.d_model // cfg.n_heads)
     return torch.zeros(shape, dtype=dtype), torch.zeros(shape, dtype=dtype)
 
 
@@ -75,8 +78,8 @@ def export(model, path):
         wrapped, (ids, pos, pk, pv, sk, sv), path, dynamo=True, external_data=False,
         input_names=["ids", "pos", "prefix_k", "prefix_v", "step_k", "step_v"],
         output_names=["logits", "k", "v"],
-        dynamic_shapes={"ids": {1: T}, "pos": {1: T}, "prefix_k": {2: P}, "prefix_v": {2: P},
-                        "step_k": {2: S}, "step_v": {2: S}},
+        dynamic_shapes={"ids": {1: T}, "pos": {1: T}, "prefix_k": {0: P}, "prefix_v": {0: P},
+                        "step_k": {0: S}, "step_v": {0: S}},
     )
     meta = dict(n_layers=cfg.n_layers, n_heads=cfg.n_heads, head_dim=cfg.d_model // cfg.n_heads,
                 max_pos=cfg.max_pos, vocab_size=cfg.vocab_size, vocab=list(tokens.VOCAB),
@@ -111,7 +114,7 @@ class OrtModel:
         self.sess = ort_session(path)
         with open(os.path.splitext(path)[0] + ".json") as f:
             meta = json.load(f)
-        self.empty = np.zeros((meta["n_layers"], meta["n_heads"], 0, meta["head_dim"]), np.float32)
+        self.empty = np.zeros((0, meta["n_layers"], meta["n_heads"], meta["head_dim"]), np.float32)
         self.vocab = meta["vocab_size"]
         self.rng = np.random.default_rng(seed)
 
@@ -121,13 +124,13 @@ class OrtModel:
         self.sk = self.sv = e
 
     def truncate(self, n):
-        self.sk, self.sv = self.sk[:, :, :n], self.sv[:, :, :n]
+        self.sk, self.sv = self.sk[:n], self.sv[:n]
 
     async def forward(self, ids, masks, temperature=0):
-        start = self.pk.shape[2] + self.sk.shape[2]
+        start = self.pk.shape[0] + self.sk.shape[0]
         pos = np.arange(start, start + len(ids))[None]
         logits, k, v = ort_forward(self.sess, [ids], pos, self.pk, self.pv, self.sk, self.sv)
-        self.sk, self.sv = np.concatenate([self.sk, k], 2), np.concatenate([self.sv, v], 2)
+        self.sk, self.sv = np.concatenate([self.sk, k]), np.concatenate([self.sv, v])
         allow = np.frombuffer(bytes(masks), np.uint8).reshape(len(ids), self.vocab).astype(bool)
         lg = np.where(allow, logits[0], -np.inf)
         out = []
