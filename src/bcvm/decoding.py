@@ -1,12 +1,15 @@
 """Grammar-constrained decoding: which tokens may come next in a step's output.
 
-`OutputGrammar(n_instrs, n_names)` tracks the output side of a step,
+`OutputGrammar(n_instrs, n_names, work)` tracks the output side of a step,
 
-    <state> ip @d @d @d stack VALUE* names (N<k> VALUE)* </state> [<out> c:x+ </out>] <eos>
+    [WORK] <state> ip @d @d @d stack VALUE* names (N<k> VALUE)* </state> [<out> c:x+ </out>] <eos>
 
 and `allowed()` returns the token ids the model may emit next, so every decoded
 step parses. It also enforces canonical ints (no leading zeros, no -0), names
 in increasing order, ip within the listing and bounded stack and string sizes.
+WORK is required when `work` is '//' (<work> Q </work>) or '%'
+(<work> Q op:* P </work>), with Q most significant digit first, and absent
+when `work` is None (tokens.work_kind gives it for a step).
 """
 from . import config, tokens
 
@@ -24,11 +27,12 @@ class GrammarError(Exception):
 
 
 class OutputGrammar:
-    def __init__(self, n_instrs, n_names, max_stack=config.MAX_STACK):
+    def __init__(self, n_instrs, n_names, max_stack=config.MAX_STACK, work=None):
         self.max_addr = n_instrs - 1
         self.n_names = n_names
         self.max_stack = max_stack
-        self.frames = [["start"]]
+        self.work = work
+        self.frames = [["work" if work else "start"]]
         self.addr = 0
         self.addr_digits = 0
         self.depth = 0
@@ -57,11 +61,23 @@ class OutputGrammar:
             return ["i+", "i-"]
         if kind == "tuple":
             return _VALUE_START + [")"]
+        if kind == "wq":
+            _, sign, digits = f
+            if not digits:
+                return [d for d in _DIGITS if not (sign == "i-" and d == "0")]
+            more = list(_DIGITS) if digits[0] != "0" and len(digits) < MAX_INT_DIGITS else []
+            return more + (["op:*"] if self.work == "%" else ["</work>"])
         return self._top_allowed(kind)
 
     def _top_allowed(self, kind):
         if kind == "start":
             return ["<state>"]
+        if kind == "work":
+            return ["<work>"]
+        if kind in ("wq_sign", "wp"):
+            return ["i+", "i-"]
+        if kind == "wp_done":
+            return ["</work>"]
         if kind == "ip":
             return ["ip"]
         if kind == "addr":
@@ -102,6 +118,8 @@ class OutputGrammar:
             return (_VALUE_START if self.depth + 1 < self.max_stack else []) + ["names"]
         if kind == "name_val":
             return [f"N{k}" for k in range(self.last_name + 1, self.n_names)] + ["</state>"]
+        if kind == "wp":
+            return ["</work>"]
         raise AssertionError(kind)
 
     # -------------------------------------------------- transitions
@@ -131,7 +149,13 @@ class OutputGrammar:
             else:
                 f[1] += 1
             return
-        if kind in ("triple", "tuple", "stack", "name_val"):
+        if kind == "wq":
+            if tok in _DIGITS:
+                f[2].append(tok)
+            else:
+                f[:] = ["wp"] if tok == "op:*" else ["start"]
+            return
+        if kind in ("triple", "tuple", "stack", "name_val", "wp"):
             if kind == "tuple" and tok == ")":
                 self.frames.pop()
                 self._value_done()
@@ -141,7 +165,13 @@ class OutputGrammar:
                 return
             self._start_value(tok)
             return
-        if kind == "start":
+        if kind == "work":
+            f[0] = "wq_sign"
+        elif kind == "wq_sign":
+            f[:] = ["wq", tok, []]
+        elif kind == "wp_done":
+            f[0] = "start"
+        elif kind == "start":
             f[0] = "ip"
         elif kind == "ip":
             f[0] = "addr"
@@ -197,6 +227,8 @@ class OutputGrammar:
             self.depth += 1
         elif kind == "name_val":
             f[0] = "names"
+        elif kind == "wp":
+            f[0] = "wp_done"
 
     @property
     def done(self):

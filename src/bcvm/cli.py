@@ -67,7 +67,8 @@ def cmd_show(a):
     trace = refvm.run(prog)
     print(" ".join(["<bos>"] + tokens.enc_listing(prog)))
     for i in range(min(a.steps, trace.steps)):
-        print(" ".join(tokens.enc_step(trace.states[i], trace.states[i + 1], trace.outs[i])))
+        st = trace.states[i]
+        print(" ".join(tokens.enc_step(st, trace.states[i + 1], trace.outs[i], tokens.enc_work(prog.instrs[st.ip], st))))
     return 0
 
 

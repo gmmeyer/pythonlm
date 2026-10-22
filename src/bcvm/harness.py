@@ -125,7 +125,7 @@ class OracleStepper:
     def propose(self, prog, listing_tokens, state_tokens, n):
         st, _ = tokens.parse_state(state_tokens)
         nxt, out = refvm.step(prog, st)
-        toks = tokens.enc_state(nxt) + tokens.enc_out(out) + ["<eos>"]
+        toks = tokens.enc_work(prog.instrs[st.ip], st) + tokens.enc_state(nxt) + tokens.enc_out(out) + ["<eos>"]
         cands = [toks] * n
         if self.corrupt:
             cands = [self.corrupt(toks)] + cands[1:]

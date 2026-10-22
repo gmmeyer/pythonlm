@@ -52,10 +52,10 @@ class _LayerCache:
 
 
 class _Request:
-    __slots__ = ("slot", "prog", "listing", "state", "sample", "result", "done")
+    __slots__ = ("slot", "prog", "listing", "state", "work", "sample", "result", "done")
 
-    def __init__(self, slot, prog, listing, state, sample):
-        self.slot, self.prog, self.listing, self.state, self.sample = slot, prog, listing, state, sample
+    def __init__(self, slot, prog, listing, state, work, sample):
+        self.slot, self.prog, self.listing, self.state, self.work, self.sample = slot, prog, listing, state, work, sample
         self.result = None
         self.done = threading.Event()
 
@@ -82,8 +82,9 @@ class Engine:
         self.forwards = 0
 
     # ------------------------------------------------ called from script threads
-    def request(self, slot, prog, listing, state, sample):
-        r = _Request(slot, prog, listing, state, sample)
+    def request(self, slot, prog, listing, state, work, sample):
+        """work: the step's tokens.work_kind, which the output grammar enforces."""
+        r = _Request(slot, prog, listing, state, work, sample)
         with self.cv:
             self.pending.append(r)
             self.cv.notify_all()
@@ -191,7 +192,7 @@ class Engine:
         pos = np.minimum(self.ll[:, None] + np.arange(T), S - 1)
         logits = self._forward(ids, pos)[self.all_rows, torch.from_numpy(np.maximum(lens - 1, 0)).to(self.dev)]
         cur = np.minimum(self.ll + lens, S - 1)
-        grammar = {r.slot: OutputGrammar(len(r.prog.instrs), len(r.prog.names)) for r in reqs}
+        grammar = {r.slot: OutputGrammar(len(r.prog.instrs), len(r.prog.names), work=r.work) for r in reqs}
         out = {r.slot: [] for r in reqs}
         sample = torch.zeros(B, dtype=torch.bool)
         sample[[r.slot for r in reqs if r.sample]] = True
@@ -243,16 +244,17 @@ class ModelStepper:
     def propose(self, prog, listing_tokens, state_tokens, n):
         if listing_tokens is not self.listing:
             self.reset(listing_tokens)
-        self._track(prog, state_tokens)
-        return self._candidates(prog, listing_tokens, state_tokens, n)
+        st, _ = tokens.parse_state(state_tokens)
+        self._track(prog, st)
+        work = tokens.work_kind(prog.instrs[st.ip], st)
+        return self._candidates(prog, listing_tokens, state_tokens, work, n)
 
-    def _candidates(self, prog, listing, state, n):
+    def _candidates(self, prog, listing, state, work, n):
         for k in range(n):
-            yield self.engine.request(self.slot, prog, listing, state, sample=k > 0)
+            yield self.engine.request(self.slot, prog, listing, state, work, sample=k > 0)
 
-    def _track(self, prog, state_tokens):
+    def _track(self, prog, st):
         if self.diverged is None:
-            st, _ = tokens.parse_state(state_tokens)
             if self.expect is not None and not st.same(self.expect):
                 self.diverged = (self.steps - 1, _kind(prog.instrs[self.prev_ip]))
             else:

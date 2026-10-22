@@ -107,8 +107,9 @@ def encode_group(prog, trace, idxs):
     listing = tokens.ids(["<bos>"] + tokens.enc_listing(prog))
     steps = []
     for i in idxs:
-        s_in = tokens.enc_state(trace.states[i])
-        toks = s_in + ["=>"] + tokens.enc_state(trace.states[i + 1]) + tokens.enc_out(trace.outs[i]) + ["<eos>"]
+        st = trace.states[i]
+        s_in = tokens.enc_state(st)
+        toks = tokens.enc_step(st, trace.states[i + 1], trace.outs[i], tokens.enc_work(prog.instrs[st.ip], st))
         if len(listing) + len(toks) > config.CONTEXT:
             raise Skip("too_long")
         steps.append((tokens.ids(toks), len(s_in) + 1))

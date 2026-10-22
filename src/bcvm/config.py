@@ -7,7 +7,7 @@ import sys
 # and the runner needs compile() and torch in the same interpreter.
 PYTHON_VERSION = (3, 14)
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2       # 2: work section on // and % steps
 
 INT_BOUND = 999          # every int in the state must satisfy |v| <= INT_BOUND
 MAX_STEPS = 2000         # instruction budget per script during data generation

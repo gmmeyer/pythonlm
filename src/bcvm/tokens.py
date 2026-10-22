@@ -11,6 +11,13 @@ Layout of one training step (see PLAN.md for the full grammar):
   They are only ever copied, never computed.
 - Ints are a sign token then decimal digits least significant first: 120 -> i+ 0 2 1.
 - Strings are '"', one c:<char> token per character, '"'.
+- A BINARY_OP step with // or % on ints starts its output with a work section,
+  scratch the harness ignores: the quotient most significant digit first (long
+  division's order; the result's own least-significant-first digits would
+  need the whole division before the first one), and for % the product
+  divisor * quotient, so the remainder is a subtraction:
+      754 // 13:  => <work> i+ 5 8 </work> <state> ... i+ 8 5 names ...
+      754 % 13:   => <work> i+ 5 8 op:* i+ 4 5 7 </work> <state> ... i+ 0 names ...
 - The vocabulary already reserves tokens for phases D-F so it never changes.
 """
 import hashlib
@@ -51,7 +58,7 @@ OPCODES = sorted({
     "CALL_INTRINSIC_1", "CONVERT_VALUE", "FORMAT_WITH_SPEC", "LIST_TO_TUPLE",
 })
 CHARS = [chr(c) for c in range(32, 127)] + ["\n", "\t"]
-RESERVED = [f"<r{i}>" for i in range(24)]
+RESERVED = ["<work>", "</work>"] + [f"<r{i}>" for i in range(2, 24)]
 
 VOCAB = (SPECIAL + KEYWORDS + ADDR + DIGITS + INT_SIGNS + VALUE_WORDS + BUILTIN_NAMES
          + METHOD_NAMES + USER_NAMES + REFS + [f"op:{o}" for o in BINOPS]
@@ -185,8 +192,33 @@ def enc_out(text):
     return ["<out>"] + [f"c:{ch}" for ch in text] + ["</out>"]
 
 
-def enc_step(state_in, state_out, out_text):
-    return enc_state(state_in) + ["=>"] + enc_state(state_out) + enc_out(out_text) + ["<eos>"]
+WORK_OPS = {"//": "//", "//=": "//", "%": "%", "%=": "%"}
+
+
+def work_kind(ins, st):
+    """'//' or '%' if this step's output starts with a work section, else None."""
+    if ins.opname != "BINARY_OP" or ins.arg not in WORK_OPS or len(st.stack) < 2:
+        return None
+    a, b = st.stack[-2], st.stack[-1]
+    if type(a) not in (int, bool) or type(b) not in (int, bool) or b == 0:
+        return None
+    return WORK_OPS[ins.arg]
+
+
+def enc_work(ins, st):
+    kind = work_kind(ins, st)
+    if kind is None:
+        return []
+    a, b = int(st.stack[-2]), int(st.stack[-1])
+    q = a // b
+    toks = ["<work>", "i-" if q < 0 else "i+"] + list(str(abs(q)))
+    if kind == "%":
+        toks += ["op:*"] + enc_int(b * q)
+    return toks + ["</work>"]
+
+
+def enc_step(state_in, state_out, out_text, work=()):
+    return enc_state(state_in) + ["=>"] + list(work) + enc_state(state_out) + enc_out(out_text) + ["<eos>"]
 
 
 def ids(tokens):
@@ -316,8 +348,37 @@ def parse_state(toks, pos=0):
     return State(ip, tuple(stack), names), r.pos
 
 
+def _read_int_msb(r):
+    sign = r.take()
+    if sign not in ("i+", "i-"):
+        raise ParseError(f"expected int sign, got {sign!r}")
+    digits = []
+    while r.pos < len(r.toks) and r.toks[r.pos] in DIGITS:
+        digits.append(r.take())
+    if not digits or (len(digits) > 1 and digits[0] == "0") or (sign == "i-" and digits == ["0"]):
+        raise ParseError("bad or non-canonical int in work section")
+    v = int("".join(digits))
+    return -v if sign == "i-" else v
+
+
+def parse_work(toks, pos=0):
+    """Parse '<work> Q [op:* P] </work>'; returns ((quotient, product or None), next pos)."""
+    r = _Reader(toks, pos)
+    r.take("<work>")
+    q = _read_int_msb(r)
+    p = None
+    if r.peek() == "op:*":
+        r.take()
+        p = _read_int(r)
+    r.take("</work>")
+    return (q, p), r.pos
+
+
 def parse_step_output(toks, pos=0):
-    """Parse a model's output side: '<state>...</state> [<out>...</out>] <eos>'."""
+    """Parse a model's output side: '[<work>...</work>] <state>...</state> [<out>...</out>] <eos>'.
+    The work section is scratch and is skipped."""
+    if pos < len(toks) and toks[pos] == "<work>":
+        _, pos = parse_work(toks, pos)
     st, pos = parse_state(toks, pos)
     r = _Reader(toks, pos)
     out = ""

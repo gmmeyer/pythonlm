@@ -123,18 +123,19 @@ def test_engine_decode_matches_full_forward():
         st, outs = refvm.State(0, (), {}), []
         for _ in range(3):
             state = tokens.enc_state(st) + ["=>"]
-            outs.append((state, next(iter(stepper.propose(prog, listing, state, 1)))))
+            work = tokens.work_kind(prog.instrs[st.ip], st)
+            outs.append((state, next(iter(stepper.propose(prog, listing, state, 1))), work))
             st, _ = refvm.step(prog, st)
         return prog, listing, outs
 
     engine = Engine(model, n_slots=3)
     results = engine.run_all(srcs, fn)
     for prog, listing, outs in results:
-        for state, cand in outs:
+        for state, cand, work in outs:
             x = torch.tensor(tokens.ids(listing + state + cand))[None]
             with torch.no_grad():
                 logits = model(x, torch.arange(x.shape[1])[None], _causal(x.shape[1]))[0]
-            g = OutputGrammar(len(prog.instrs), len(prog.names))
+            g = OutputGrammar(len(prog.instrs), len(prog.names), work=work)
             start = len(listing) + len(state)
             for j, t in enumerate(cand):
                 allowed = sorted(g.allowed())

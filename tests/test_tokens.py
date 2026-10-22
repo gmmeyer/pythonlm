@@ -57,14 +57,60 @@ def test_parser_rejects_non_canonical():
 
 
 def test_grammar_accepts_every_gold_output_and_masks_allow_it():
+    with_work = 0
     for prog, trace in _traces():
         for i in range(trace.steps):
-            out = tokens.enc_state(trace.states[i + 1]) + tokens.enc_out(trace.outs[i]) + ["<eos>"]
-            g = decoding.OutputGrammar(len(prog.instrs), len(prog.names))
+            st = trace.states[i]
+            ins = prog.instrs[st.ip]
+            work = tokens.enc_work(ins, st)
+            with_work += bool(work)
+            out = work + tokens.enc_state(trace.states[i + 1]) + tokens.enc_out(trace.outs[i]) + ["<eos>"]
+            g = decoding.OutputGrammar(len(prog.instrs), len(prog.names), work=tokens.work_kind(ins, st))
             for t in out:
                 assert tokens.TOKEN_ID[t] in g.allowed(), (t, out)
                 g.feed(t)
             assert g.done
+            nxt, text, end = tokens.parse_step_output(out)
+            assert end == len(out) and nxt.same(trace.states[i + 1]) and text == trace.outs[i]
+    assert with_work > 10
+
+
+def test_work_section():
+    prog = support.check_source("a = 754\nb = 13\nprint(a // b)\nprint(a % b)\nc = -659\nc %= 22\nd = a // b * 9 // 9\n", "A")
+    trace = refvm.run(prog)
+    works = []
+    for st in trace.states[:-1]:
+        w = tokens.enc_work(prog.instrs[st.ip], st)
+        if w:
+            works.append(" ".join(w))
+            (q, p), end = tokens.parse_work(w)
+            a, b = st.stack[-2], st.stack[-1]
+            assert end == len(w) and q == a // b and p in (None, b * q)
+    assert works == ["<work> i+ 5 8 </work>", "<work> i+ 5 8 op:* i+ 4 5 7 </work>",
+                     "<work> i- 3 0 op:* i- 0 6 6 </work>", "<work> i+ 5 8 </work>", "<work> i+ 5 8 </work>"]
+
+
+def test_grammar_enforces_the_work_section():
+    ids = lambda *ts: {tokens.TOKEN_ID[t] for t in ts}  # noqa: E731
+    assert decoding.OutputGrammar(5, 1).allowed() == ids("<state>")
+    g = decoding.OutputGrammar(5, 1, work="%")
+    assert g.allowed() == ids("<work>")
+    g.feed("<work>")
+    g.feed("i-")
+    assert tokens.TOKEN_ID["0"] not in g.allowed()          # no -0
+    g = decoding.OutputGrammar(5, 1, work="%")
+    for t in ("<work>", "i+", "0"):
+        g.feed(t)
+    assert g.allowed() == ids("op:*")                        # 0 has no more digits; % needs the product
+    for t in ("op:*", "i+", "0"):
+        g.feed(t)
+    assert g.allowed() == ids("</work>", *tokens.DIGITS)     # the product is LSB-first: 0 5 is 50
+    g.feed("</work>")
+    assert g.allowed() == ids("<state>")
+    g = decoding.OutputGrammar(5, 1, work="//")
+    for t in ("<work>", "i+", "5", "8"):
+        g.feed(t)
+    assert tokens.TOKEN_ID["</work>"] in g.allowed() and tokens.TOKEN_ID["op:*"] not in g.allowed()
 
 
 def test_grammar_blocks_malformed():
