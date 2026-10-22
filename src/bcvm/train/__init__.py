@@ -20,7 +20,8 @@ def add_batch_args(p):
 
 def add_train_args(p):
     p.add_argument("--name", required=True, help="run name; output goes to $BCVM_DATA/runs/<name>")
-    p.add_argument("--data", default="A=1", help="phase mix by group, e.g. B=0.75,A=0.25")
+    p.add_argument("--data", default="A=1",
+                   help="mix by group over phase<X>/train, e.g. B=0.75,A=0.25; A/train_arith means phaseA/train_arith")
     p.add_argument("--tokens", default="1e9", help="packed tokens to train on (incl. listings and padding)")
     p.add_argument("--init", help="checkpoint to start from (weights only, e.g. the previous phase)")
     p.add_argument("--resume", action="store_true", help="continue from the run's latest.pt")

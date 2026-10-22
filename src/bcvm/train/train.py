@@ -92,12 +92,20 @@ def lr_at(step, total, a):
 
 
 def parse_mix(spec):
+    """'B=0.75,A=0.25': weights per group over phase<X>/train; a key with a '/'
+    is a directory under $BCVM_DATA, e.g. A/train_arith = phaseA/train_arith."""
     sources = []
     for part in spec.split(","):
-        phase, _, w = part.partition("=")
-        stems = list_shards(phase_dir(config.DATA_DIR, phase.strip(), "train"))
+        key, _, w = part.partition("=")
+        key = key.strip()
+        if "/" in key:
+            phase, _, sub = key.partition("/")
+            directory = phase_dir(config.DATA_DIR, phase, sub)
+        else:
+            directory = phase_dir(config.DATA_DIR, key, "train")
+        stems = list_shards(directory) if os.path.isdir(directory) else []
         if not stems:
-            raise SystemExit(f"no shards for phase {phase}")
+            raise SystemExit(f"no shards in {directory}")
         sources.append((float(w or 1), stems))
     return sources
 
@@ -155,7 +163,7 @@ def train(a):
     total = math.ceil(float(a.tokens) / per_step)
     n_params = model.n_params()
     flops_per_tok = 6 * model.n_params(embeddings=False)
-    eval_dir = os.path.join(config.DATA_DIR, a.eval_set or f"phase{a.data.split('=')[0].strip()}/eval_test")
+    eval_dir = os.path.join(config.DATA_DIR, a.eval_set or f"phase{a.data.split('=')[0].split('/')[0].strip()}/eval_test")
     emit(f"run {a.name}: {n_params / 1e6:.1f}M params, {per_step} tokens/step, {total} steps "
          f"({float(a.tokens) / 1e9:.2f}B tokens), data {a.data}, out {out}",
          kind="start", params=n_params, cfg=asdict(cfg), args=run_args(a), total_steps=total)

@@ -42,3 +42,20 @@ def test_splits_are_deterministic_and_held_out():
     assert pipeline.split_of(ids, "grammar", None) == pipeline.split_of(ids, "grammar", None)
     held = sum(pipeline.split_of([], "natural", f"b{i}") == "test" for i in range(2000))
     assert 100 < held < 300
+
+
+def test_arith_source_is_division_heavy():
+    import random
+    from bcvm.gen import make
+    rng = random.Random(5)
+    div = total = 0
+    for _ in range(60):
+        src, _ = make(rng, "A", "arith")
+        try:
+            prog, trace = pipeline.prepare(src, "A")
+        except pipeline.Skip:
+            continue
+        for st in trace.states[:-1]:
+            total += 1
+            div += tokens.work_kind(prog.instrs[st.ip], st) is not None
+    assert total > 500 and div / total > 0.08

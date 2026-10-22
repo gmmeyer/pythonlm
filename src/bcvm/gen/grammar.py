@@ -34,9 +34,13 @@ def _in_bound(v):
 
 
 class Gen:
-    def __init__(self, rng, phase):
+    def __init__(self, rng, phase, arith=False):
         self.rng = rng
         self.phase = phase
+        # arith: a drill for the hardest steps, with * // % dominant and
+        # divisors spread over 1-99 rather than the usual 2, 5, 10, 60, 100
+        self.arith = arith
+        self.op_weights = [10, 8, 22, 30, 30] if arith else [30, 25, 18, 13, 14]
         self.B = phase >= "B"
         self.C = phase >= "C"
         self.lines = []
@@ -130,7 +134,7 @@ class Gen:
                 inner = Expr(inner.src, ATOM, inner.val, "int")
             v = None if inner.val is None else -inner.val
             return Expr("-" + _wrap(inner, UNARY), UNARY, v, "int")
-        op = rng.choices(["+", "-", "*", "//", "%"], [30, 25, 18, 13, 14])[0]
+        op = rng.choices(["+", "-", "*", "//", "%"], self.op_weights)[0]
         a = self.int_expr(depth + 1, maxdepth)
         if op in ("//", "%"):
             b = self.divisor(depth, maxdepth)
@@ -162,7 +166,12 @@ class Gen:
         if ints and self.chance(0.35):
             name = self.rng.choice(ints)
             return Expr(name, ATOM, self.known[name], "int")
-        v = self.rng.choice([2, 2, 3, 4, 5, 7, 10, 10, 12, 60, 100]) if self.chance(0.7) else self.rng.randint(1, 50)
+        if self.arith and self.chance(0.7):
+            v = self.rng.randint(2, 9) if self.chance(0.4) else self.rng.randint(10, 99)
+        elif self.chance(0.7):
+            v = self.rng.choice([2, 2, 3, 4, 5, 7, 10, 10, 12, 60, 100])
+        else:
+            v = self.rng.randint(1, 50)
         if self.chance(0.1):
             return Expr(f"-{v}", UNARY, -v, "int")
         return Expr(str(v), ATOM, v, "int")
@@ -334,8 +343,11 @@ class Gen:
         ints = self.vars_of("int", assignable=True)
         if ints and self.chance(0.3):
             name = rng.choice(ints)
-            op = rng.choices(["+", "-", "*", "//", "%"],
-                             [40, 25, 10, 12, 13] if self.straight else [40, 25, 4, 12, 19])[0]
+            if self.arith:
+                weights = [10, 8, 12, 35, 35]
+            else:
+                weights = [40, 25, 10, 12, 13] if self.straight else [40, 25, 4, 12, 19]
+            op = rng.choices(["+", "-", "*", "//", "%"], weights)[0]
             rhs = self.divisor(1, 2) if op in ("//", "%") else (self.small_operand() if op == "*" else self.int_expr(1, 2))
             cur = self.known.get(name)
             val = None
@@ -598,5 +610,5 @@ class Gen:
         return "\n".join(self.lines) + "\n"
 
 
-def generate(rng, phase):
-    return Gen(rng, phase).script()
+def generate(rng, phase, arith=False):
+    return Gen(rng, phase, arith).script()
