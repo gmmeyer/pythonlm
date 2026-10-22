@@ -59,3 +59,13 @@ def test_arith_source_is_division_heavy():
             total += 1
             div += tokens.work_kind(prog.instrs[st.ip], st) is not None
     assert total > 500 and div / total > 0.08
+
+
+def test_copy_source_has_repetitive_strings():
+    import random
+    from bcvm.gen import grammar, make
+    rng = random.Random(9)
+    srcs = [make(rng, "B", "copy")[0] for _ in range(80)]
+    assert sum(any(p in s for p in ("0101", "1010", "abab", "baba", "0110", "1001")) for s in srcs) >= 5
+    # the default generator is unchanged, so eval sets rebuild identically
+    assert grammar.generate(random.Random(3), "B") == grammar.generate(random.Random(3), "B", copy=False)

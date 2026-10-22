@@ -8,7 +8,7 @@ are unknown; the generator keeps loops bounded by construction and leaves the
 rest to the reference interpreter, which discards scripts that break a limit.
 """
 from .. import config
-from .common import VAR_NAMES, WORDS, random_text, small_int, string_literal
+from .common import VAR_NAMES, WORDS, pattern_text, random_text, small_int, string_literal
 
 BOUND = config.INT_BOUND
 
@@ -34,12 +34,14 @@ def _in_bound(v):
 
 
 class Gen:
-    def __init__(self, rng, phase, arith=False):
+    def __init__(self, rng, phase, arith=False, copy=False):
         self.rng = rng
         self.phase = phase
         # arith: a drill for the hardest steps, with * // % dominant and
         # divisors spread over 1-99 rather than the usual 2, 5, 10, 60, 100
         self.arith = arith
+        # copy: a drill where most string literals are repetitive patterns
+        self.copy = copy
         self.op_weights = [10, 8, 22, 30, 30] if arith else [30, 25, 18, 13, 14]
         self.B = phase >= "B"
         self.C = phase >= "C"
@@ -230,7 +232,7 @@ class Gen:
 
     # ------------------------------------------------------------ str exprs (phase C)
     def str_literal_expr(self):
-        s = string_literal(self.rng)
+        s = pattern_text(self.rng) if self.copy and self.chance(0.6) else string_literal(self.rng)
         return Expr(repr(s), ATOM, s, "str")
 
     def str_expr(self, shallow=False):
@@ -321,7 +323,7 @@ class Gen:
         r = rng.random()
         if r < 0.04:
             self.emit(depth, "print()")
-        elif r < 0.20:
+        elif r < (0.65 if self.copy else 0.20):
             self.emit(depth, f"print({self.str_literal_expr().src})")
         elif self.B and r < 0.30:
             self.emit(depth, f"print({self.cond().src})")
@@ -610,5 +612,5 @@ class Gen:
         return "\n".join(self.lines) + "\n"
 
 
-def generate(rng, phase, arith=False):
-    return Gen(rng, phase, arith).script()
+def generate(rng, phase, arith=False, copy=False):
+    return Gen(rng, phase, arith, copy).script()

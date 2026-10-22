@@ -51,6 +51,20 @@ def string_literal(rng, kind=None):
     return s
 
 
+PATTERN_ALPHABETS = ["01", "01", "012", "10", "ab", "abc", "xy", "xo", "-=", "*.", "ACGT", string.digits]
+
+
+def pattern_text(rng):
+    """A repetitive string, hard to copy exactly: few distinct characters, so the
+    same pairs recur with different continuations ('100101', 'abaab'), often
+    after a label ('read bottom to top: 100101')."""
+    alphabet = rng.choice(PATTERN_ALPHABETS)
+    s = "".join(rng.choice(alphabet) for _ in range(rng.randint(3, 24)))
+    if rng.random() < 0.4:
+        s = rng.choice([w for w in LABELS if w.strip()] + WORDS) + " " + s
+    return s
+
+
 LITERAL_MAX = 999  # raised for the widened-number eval set
 
 
