@@ -299,7 +299,8 @@ What a1 says:
   scripts as before. Plus `phaseA/train_arith`: 3.07B tokens from the
   `arith` source (the grammar with `*`, `//`, `%` dominant and divisors
   spread over 1–99; division 17% of sampled steps), to mix in with
-  `--data A=0.7,A/train_arith=0.3`.
+  `--data A=0.7,A/train_arith=0.3`; likewise `phaseB/train_arith` and
+  `phaseC/train_arith`, 2.02B tokens each.
 
 ## Next steps
 
