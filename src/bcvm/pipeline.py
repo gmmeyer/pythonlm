@@ -90,6 +90,12 @@ def step_weight(prog, trace, i):
         return 2.0        # taken jump, break, continue
     if op in TRIVIAL:
         return 0.3
+    if op == "BINARY_OP":
+        ins = prog.instrs[s0.ip]
+        if tokens.work_kind(ins, s0):
+            return 4.0    # // and %: the hardest arithmetic, see scripts/arith_probe.py
+        if ins.arg in ("*", "*="):
+            return 2.0
     return 1.0
 
 
