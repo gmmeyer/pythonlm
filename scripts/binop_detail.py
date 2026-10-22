@@ -16,6 +16,7 @@ from bcvm.train.data import EvalSet, batches, pack
 from bcvm.train.train import forward, load_model, to_device
 
 NAMES = tokens.TOKEN_ID["names"]
+STATE = tokens.TOKEN_ID["<state>"]
 SIGNS = {tokens.TOKEN_ID["i+"], tokens.TOKEN_ID["i-"]}
 
 
@@ -64,8 +65,11 @@ def main(ckpt, name, seq_len=16384, rows=4):
                 n_by[key][1] += 1
                 m = int(bad[0])
                 names_at = int(np.flatnonzero(t == NAMES)[0])
+                state_at = int(np.flatnonzero(t == STATE)[0])
                 res_at = max(i for i in range(names_at) if int(t[i]) in SIGNS)
-                if m < res_at:
+                if m < state_at:
+                    place = f"work token {m}"
+                elif m < res_at:
                     place = "stack copy"
                 elif m == res_at:
                     place = "result sign"
