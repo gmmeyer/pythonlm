@@ -255,7 +255,8 @@ pythonlm-data/
 | a4 | a3 continued | A 70% + `train_arith` 30%, 3.0B tokens, lr 5e-4, 80 min | **7.1e-5** (natural 6.4e-5, bignum 8.0e-3); 33 wrong steps in 466K, 30 of them `//`/`%` | **99.81% (9,997): phase A gate passed** on generated scripts; free-running 6.9e-5; 0 refusals; validator never fired |
 | b1 | a4 continued | B 60% + B arith 15% + A 15% + A arith 10%, 3.0B tokens, lr 8e-4, 80 min | B: **1.4e-4** (natural 1.3e-4, long 1.2e-4, bignum 1.3e-2); 341 wrong in 2.5M: `CALL`/print 147, `%` 128, `//` 38, `LOAD_CONST` 20. Phase A after B: 1.3e-4 (a4: 7.1e-5) | B, first 4,000 scripts: **97.5%**; free-running 8.0e-5 (`%` 39, `LOAD_CONST` 23, `//` 14); 0 refusals; validator stopped 3 runs, rescued 1. Scripts of 1,000–10,000 steps: 156/156 |
 | b2 | b1 continued | same mix, 3.0B tokens, lr 5e-4, 80 min | B: **1.1e-4** (natural 1.2e-4, long 9.6e-5); 278 wrong: `LOAD_CONST` 141 (the `100101` script), `%` 100, `//` 25, rest ~12. Phase A after B: 6.4e-5 | B, first 4,000: **97.7%**; free-running 1.1e-4; 64 of 91 failures are the `100101` script family, without it ~99.3% |
-| b3 | b2 continued | B 45% (6.0B available) + B arith 30% + A 15% + A arith 10%, 3.0B tokens, lr 3e-4, 80 min | B: **2.2e-5**; 56 wrong in 2.5M: `%` 35, `//` 16, `STORE_NAME` 4; the `100101` copy errors are gone (0 `LOAD_CONST`) without the copy drill | full gate running |
+| b3 | b2 continued | B 45% (6.0B available) + B arith 30% + A 15% + A arith 10%, 3.0B tokens, lr 3e-4, 80 min | B: **2.2e-5**; 56 wrong in 2.5M: `%` 35, `//` 16, `STORE_NAME` 4; the `100101` copy errors are gone (0 `LOAD_CONST`) without the copy drill. natural 3.0e-5, long 4.1e-5, bignum 7.8e-3. Phase A after B: **2.8e-5** | **99.70% (9,986 of 10,016, full set): phase B gate passed** on generated scripts; free-running 1.7e-5 (all 43 divergences `%`/`//`); 0 refusals; 1,000–10,000-step scripts 386/387 |
+| c1 | b3 continued | C 50% + C arith 15% + C copy 10% + B 10% + B arith 5% + A 5% + A arith 5%, 3.0B tokens, lr 8e-4 | running | |
 
 a1 and a2 used format 1 data, now in `$BCVM_DATA/v1/`. b1's `LOAD_CONST` and
 `CALL` errors (167 of 341) all come from one held-out natural script that prints
@@ -313,15 +314,16 @@ What a1 says:
   `phaseC/train_arith`, 2.02B tokens each. Phase B train now has 6.02B
   tokens (shards 64–127 added). `phaseB/train_copy`: 1.03B tokens from the
   `copy` source, the grammar with most string literals repetitive patterns
-  over small alphabets (`100101`, `abaab`, `ACGT…`), for b4.
+  over small alphabets (`100101`, `abaab`, `ACGT…`). Phase C: train 6.02B
+  tokens (shards 64–127 added), `train_copy` 1.03B.
 
 ## Next steps
 
 1. **Phase A: your hand-written set.** a4 passes the generated-script gate
    (99.81%); the design also requires 99% on ~200 scripts you write
    (`eval/handwritten/phaseA/`), run with `bcvm run --ckpt`/a gate over them.
-2. **Phase B** (b1, from a4 with 25% A replay), then C. Phase B scripts
-   average ~250 steps vs 47 in A, so 99% stdout match needs ~4e-5 per step.
+2. **Phase B passed** (b3, 99.70%); your hand-written phase B set is next
+   for it. **Phase C** (c1, from b3) is training.
 3. **Baseline** (once, phase B): same-size model from source straight to
    stdout.
 4. **Phases D–F**, below.
