@@ -239,7 +239,7 @@ pythonlm-data/
 | Run | Model | Data | Step err, teacher-forced (`eval_test`) | Gate: stdout match (`eval_test`, 10,016 scripts) |
 | --- | --- | --- | --- | --- |
 | a1 | 26.1M: 8 layers × 512, 8 heads | A, 1.0B tokens, one pass, lr 1e-3 cosine, 27 min | 4.8e-3 (natural 5.4e-3, bignum 1.2e-2) | 85.1%; free-running step err 4.4e-3; 0 refusals; validator fired 6× |
-| a2-16L | 51.8M: 16 layers × 512 | same recipe, 1.0B tokens, ~52 min (321K tok/s) | running | |
+| a2-16L | 51.8M: 16 layers × 512 | same recipe, 1.0B tokens, 52 min (317K tok/s) | 4.4e-3: only 9% better, same `//` and `%` errors | not run |
 
 What a1 says:
 
@@ -249,8 +249,9 @@ What a1 says:
   `*` is 8%; `+`/`-` ≤0.4%. Negative operands are worse but rare. This is
   long division inside one step, with the quotient emitted least
   significant digit first, so it has to be finished before the first
-  output token: a depth problem as much as a data one. a2-16L tests depth
-  at equal data. `scripts/binop_errors.py` gives the breakdown.
+  output token. Doubling depth (a2-16L) at equal data barely helped, so
+  the lever is data: 1B tokens hold only ~66K of the hard division steps.
+  `scripts/binop_errors.py` gives the breakdown.
 - Free-running error matches teacher-forced error, so errors don't compound
   beyond the per-step rate. The validator almost never fires because these
   are wrong values in a well-formed state, which it is designed not to check.
@@ -263,7 +264,7 @@ What a1 says:
 
 ## Next steps
 
-1. **Phase A to the bar.** Depth (a2-16L), then more data and/or upweighting
+1. **Phase A to the bar.** More data (3B+ tokens) and upweighting
    `//`, `%` and 2-digit `*` in step sampling, until `BINARY_OP` is ~1e-4 and
    the gate passes 99%. Then your hand-written phase A set.
 2. **Phase B**, continuing from the A checkpoint with 25% A replay
