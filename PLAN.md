@@ -14,9 +14,9 @@ volume estimate, and what comes next.
 | Validator + runner loop with resampling | Done, exercised end to end with an oracle stepper (the reference VM behind the token interface) |
 | Script sources: grammar, templates, natural | Done for A–C. 1,020 natural scripts written by Claude subagents (`natural/`) |
 | Data pipeline (multiprocess, sharded, resumable) | Done |
-| Phase A data | 1.02B tokens, 17.2M steps, 1.08M scripts, 2.8 GB |
-| Phase B data | 3.01B tokens, 47.3M steps, 2.96M scripts, 9.0 GB |
-| Phase C data | 3.01B tokens, 31.4M steps, 1.96M scripts, 8.3 GB |
+| Phase A data (format 2) | 6.14B tokens, 102M steps, 6.39M scripts, 14 GB (light records) |
+| Phase B data (format 2) | 3.01B tokens, 46.7M steps, 2.93M scripts, 6.8 GB |
+| Phase C data (format 2) | 3.01B tokens, 31.2M steps, 1.95M scripts, 6.5 GB |
 | Eval sets (test / natural / long / bignum) | Built for A–C, see below |
 | Hand-written eval set | **Yours to write**, see `eval/handwritten/README.md` |
 | Trainer (packed, FlexAttention) | Done: `bcvm train`, `bcvm evalsteps`. Measured 632K tok/s at 26M params |
