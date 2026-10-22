@@ -45,7 +45,7 @@ def add_train_args(p):
 
 def add_gate_args(p):
     p.add_argument("ckpt")
-    p.add_argument("set", help="eval dir relative to $BCVM_DATA, e.g. phaseA/eval_test")
+    p.add_argument("set", help="eval dir relative to $BCVM_DATA (e.g. phaseA/eval_test), or a directory of .py files (e.g. eval/handwritten/phaseA)")
     p.add_argument("--phase", help="default: from the set's path")
     p.add_argument("--limit", type=int, help="first N scripts only")
     p.add_argument("--slots", type=int, default=256, help="scripts run concurrently")

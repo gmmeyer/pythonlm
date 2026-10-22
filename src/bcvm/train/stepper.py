@@ -286,6 +286,22 @@ def load_records(directory, limit=None):
     return recs
 
 
+def load_scripts(directory, phase, limit=None):
+    """Records for a directory of .py files (e.g. eval/handwritten/phaseA): the
+    expected stdout is the reference VM's, checked against CPython."""
+    from .. import pipeline
+    recs = []
+    for name in sorted(f for f in os.listdir(directory) if f.endswith(".py"))[:limit]:
+        with open(os.path.join(directory, name)) as f:
+            src = f.read()
+        try:
+            _, trace = pipeline.prepare(src, phase, max_steps=10_000)
+        except pipeline.Skip as e:
+            raise SystemExit(f"{name}: not a valid phase {phase} eval script ({e}: {e.__cause__})")
+        recs.append(dict(src=src, stdout=trace.stdout, steps=trace.steps, file=name))
+    return recs
+
+
 def _phase_of(path):
     m = re.search(r"phase([A-Z])", path)
     if not m:
@@ -302,9 +318,11 @@ def _run_one(rec, stepper, phase, candidates):
 def gate(a):
     from .train import load_model
     model, ck = load_model(a.ckpt)
-    path = os.path.join(config.DATA_DIR, a.set)
     phase = a.phase or _phase_of(a.set)
-    recs = load_records(path, a.limit)
+    if os.path.isdir(a.set) and any(f.endswith(".py") for f in os.listdir(a.set)):
+        recs = load_scripts(a.set, phase, a.limit)
+    else:
+        recs = load_records(os.path.join(config.DATA_DIR, a.set), a.limit)
     engine = Engine(model, min(a.slots, len(recs)), temperature=a.temperature, seed=a.seed)
     print(f"gate {a.set} (phase {phase}): {len(recs)} scripts, ckpt step {ck['step']}, {engine.n} slots", flush=True)
     t0 = time.time()
@@ -339,7 +357,7 @@ def gate(a):
         buckets[b][0] += 1
         buckets[b][1] += ok
         if not ok and len(failures) < a.keep_failures:
-            failures.append(dict(src=rec["src"], want=rec["stdout"], got=res.stdout, refused=res.refused,
+            failures.append(dict(file=rec.get("file"), src=rec["src"], want=rec["stdout"], got=res.stdout, refused=res.refused,
                                  error=res.error, diverged=div, rejections=res.rejections[:5]))
     step_err = diverged / max(1, tracked)
     summary = dict(set=a.set, ckpt=a.ckpt, ckpt_step=ck["step"], scripts=n, match=match, match_rate=match / n,
