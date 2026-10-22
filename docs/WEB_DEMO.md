@@ -1,106 +1,98 @@
 # Web demo: the model running in the browser
 
-Goal: a page at `gmmeyer.com/pythonlm/` (static, GitHub Pages, repo
-`gmmeyer/gmmeyer`) where you type a script and watch the model run it, step by
-step, next to what real CPython prints. Everything runs on the visitor's
-machine; the weights come from Hugging Face. The blog post draft is in the site
-repo on branch `pythonlm-post` (`posts/teaching-a-model-to-run-python.html`).
+A page at `gmmeyer.com/pythonlm/` (static, GitHub Pages, repo `gmmeyer/gmmeyer`)
+where you type a script and watch the model run it, step by step, next to what
+real CPython prints. Everything runs on the visitor's machine; the weights come
+from Hugging Face. The blog post draft is in the site repo on branch
+`pythonlm-post` (`posts/teaching-a-model-to-run-python.html`).
 
-## Pieces
+## Status
 
-| Piece | Choice | Status |
+Built and working end to end in Chromium with c2: the page compiles the
+script with CPython 3.14 (Pyodide), runs the model on ONNX Runtime Web, shows
+the listing, stack, variables and both outputs. Left to do: the shipped
+checkpoint (c3 or later), fp16 weights, curated examples, Hugging Face upload,
+the site integration, the measured gate through the page.
+
+| Piece | Where | Status |
 | --- | --- | --- |
-| CPython 3.14 in the browser | Pyodide 314.x (CPython 3.14.2 in WebAssembly), from the jsDelivr CDN | **Verified** (below) |
-| Compile, support check, encode, grammar, validator | `bcvm` itself, unchanged, shipped as a zip of the pure-Python runtime modules | **Verified** (below) |
-| Reference output | `exec` of the same script in Pyodide, shown next to the model's | Verified as part of the harness check |
-| Model runtime | ONNX Runtime Web: WebGPU, falling back to WASM | To build |
-| Weights | ONNX export, fp16 if it measures the same as fp32 (~52 MB), on Hugging Face (`gmmeyer/pythonlm`?) | To build |
-| Loop | Async variant of `harness.run` (`bcvm/web.py`); model calls go to JS | To build |
-| Page | Editor, examples, listing with the current instruction, stack, variables, both outputs | To build |
+| CPython 3.14 in the browser | Pyodide 314.0.7 (CPython 3.14.2), jsDelivr | Verified: identical listings |
+| Runner | `src/bcvm/web.py`: async `harness.run`, speculative decoding, views for the page | Tested (`tests/test_web.py`) |
+| Export | `bcvm export` (`src/bcvm/train/export.py`): ONNX + `.json` (shape, vocab, self-test) | Parity exact |
+| Model in JS | `web/model.js`: the runner's model interface on ONNX Runtime Web 1.30 | Matches PyTorch |
+| Worker | `web/worker.js`: Pyodide + ORT, backend self-test and choice, run protocol | Works |
+| Page | `web/index.html`, `web/app.js` | Works; needs a design pass |
+| Build | `web/build.py` → `web/dist/` (page, 12-module runtime zip, examples) | Works |
 
-WebGL: ONNX Runtime's WebGL backend is deprecated and lacks ops this model
-needs; WebGPU is in every current major browser, and the WASM backend is a
-safe fallback (26M parameters is ~50 MFLOP per token). Cicero's WebGPU backend
-produced garbage logits for that model, so the page runs a self-test at load
-(below) and falls back to WASM if WebGPU disagrees.
+Local try-out: `bcvm export <ckpt> out/pythonlm.onnx`, then
+`python web/build.py --gate <run dir> --model out/` and
+`python -m http.server -d web/dist`, open `http://localhost:8000/?model=./model/`.
+`?backend=webgpu|wasm` forces a backend.
 
-## Verified so far (Oct 22, Node + Pyodide 314.0.7)
+## Verified (Oct 22)
 
-- **Bytecode identity.** Pyodide runs CPython 3.14.2; training used 3.14.8.
-  All 1,620 hand-written and natural scripts (A–C) give token listings
-  identical to native 3.14.8, refusals included. The model only knows the
-  exact 3.14.8 bytecode, so this was the biggest risk.
-- **Harness under WebAssembly.** All 600 hand-written scripts run through
-  `harness.run` with the oracle stepper (listing, grammar parse, validator)
-  in Pyodide, 0 mismatches against Pyodide's own `exec`. 159,584 steps in
-  8.9 s: ~56 µs of Python per step, so the model is the whole cost.
-
-Reproduce with `web/test/pyodide_run.mjs` (usage in its header):
-`listings.py` writes the listings under either interpreter for comparison,
-`harness_check.py` runs the oracle harness.
+- **Bytecode identity.** Pyodide's CPython 3.14.2 and training's 3.14.8 give
+  identical token listings for all 1,620 hand-written and natural scripts,
+  refusals included (`web/test/listings.py`).
+- **Harness under WebAssembly.** All 600 hand-written scripts through
+  `harness.run` with the oracle stepper in Pyodide: 0 mismatches against
+  `exec`, ~56 µs of Python per step (`web/test/harness_check.py`).
+- **Export parity.** On 960 hand-written steps (30,447 output tokens) ONNX
+  Runtime and PyTorch fp32 differ by at most 7e-5 in a logit and agree on
+  every argmax (`scripts/onnx_parity.py`).
+- **The runner equals the PyTorch gate.** On 60 hand-written scripts
+  (`scripts/web_gate.py`, ONNX on the CPU, fp32, speculative decoding) every
+  script passes or fails exactly as in c2's PyTorch (bf16) gate.
+- **The whole browser stack in Node** (`web/test/node_run.mjs`: Pyodide +
+  `bcvm.web` + `model.js` on onnxruntime-web WASM): same pass/fail as the
+  PyTorch gate, 12.6 steps/s.
+- **In Chromium 152** (T3's preview browser): the division example matches
+  Python, 20 steps in 1.7 s on the CPU backend.
 
 ## Inference
 
-Per script: run the listing once (≤1,408 tokens) and keep its KV cache. Per
-step: append the state tokens (prefill), then decode the output until `<eos>`,
-then drop the step's cache entries back to the listing. This is exactly how
-the model was trained (each step attends to the listing and itself).
+Per script: prefill the listing once and keep its KV cache. Per step: feed the
+state, then decode the output until `<eos>`; the step's cache is dropped
+before the next step. The graph is
+`logits, k, v = f(ids, pos, prefix_k, prefix_v, step_k, step_v)` with caches
+token-major (`[tokens, layers, heads, 64]`): the listing's stays as the session
+returned it, the step's is one flat Float32Array in JS, so appending is a
+`set()` and dropping rejected draft tokens is a length.
 
-The ONNX graph: `logits, present_k, present_v = f(ids, pos, past_k, past_v)`,
-with past/present `[layers, 1, heads, T, 64]`, RoPE on explicit positions,
-and the cache concatenated inside the graph. With WebGPU, keep the cache on
-the GPU between calls (`preferredOutputLocation: "gpu-buffer"`); with WASM the
-cache is copied per call (16 MB at a 500-token context), which is acceptable.
+**Speculative decoding** (`bcvm.web.decode_greedy`): every output state is
+mostly a copy of the input state, so drafts come from prompt lookup over the
+input state (with the ip moved to the next instruction), the current
+instruction's listing entry and the values of the names it reads, then the
+listing. A draft is verified in one forward pass under grammar masks and kept
+only as far as the model's own masked argmax agrees, so the output is exactly
+greedy decoding. 4.5–5.3 passes per step instead of 26–45 single-token passes.
+Nothing in a draft comes from the reference interpreter.
 
-**Speed.** A typical hand-written script is ~270 steps of ~60 output tokens:
-~16K decode calls, ~50 s at ~3 ms each. Too slow for a demo, but most of every
-output state is a copy of the input state. Prompt-lookup speculative decoding
-(draft the continuation by matching the last few generated tokens against the
-input state, verify the draft in one forward pass, keep the longest prefix the
-model agrees with) should bring a step to a few forward passes. It's exact:
-the output is identical to greedy decoding. The draft never comes from the
-reference VM, so nothing about it is "the answer".
+**Backends.** The worker runs the self-test (PyTorch's argmax at every output
+position of 9 fixed steps, in the model's `.json`) on WebGPU and on the CPU
+and uses the faster of those that pass, timed on decode-sized passes. In
+Chromium 152:
 
-Grammar masks come from Python (`decoding.OutputGrammar`) per position: for a
-draft of k tokens, Python walks the grammar along the draft and sends k masks
-(354 bools each) with the verify call. JS applies them before the argmax.
+- ONNX Runtime Web's `ort.all` bundle computes this model wrongly on WebGPU
+  (logits off by ~25, also with graph optimizations off; layer by layer the
+  same ops are right in smaller graphs). The `ort.webgpu` (JS kernels) and
+  `ort.jspi` bundles match the CPU to 1e-5. The worker uses `ort.webgpu`.
+- WebGPU takes 68 ms per decode-sized pass, the CPU 7.2 ms: the model is too
+  small for the GPU to pay for its per-kernel overhead and the listing cache
+  uploaded every pass. Keeping the listing cache on the GPU
+  (`preferredOutputLocation: "gpu-buffer"`) might change that.
+- WASM runs single-threaded: threads need cross-origin isolation, which GitHub
+  Pages can't set as headers (`coi-serviceworker` would).
 
-## Ship what you measure
+## Before publishing
 
-1. `scripts/export_onnx.py`: export, then run teacher-forced step error with
-   onnxruntime (CPU) on `eval_test` subsets and require it to match PyTorch;
-   then the hand-written gates with an ONNX-backed stepper. fp16 ships only if
-   its gate numbers match fp32.
-2. In the browser, a self-test at load: a few hundred fixed (input, expected
-   argmax) pairs from the PyTorch model; WebGPU is used only if all match.
-3. Before publishing: the hand-written sets through the actual page in
-   headless Chrome (Playwright, WebGPU and WASM), compared with the PyTorch
-   gate numbers. The blog quotes these.
-
-## Hosting
-
-- Static files (`index.html`, worker, `bcvm` zip, examples) in the site repo
-  under `pythonlm/`. Pyodide and onnxruntime-web from jsDelivr; the model from
-  `huggingface.co/<repo>/resolve/main/model.onnx` (both send CORS headers).
-- WASM multithreading needs cross-origin isolation, which GitHub Pages can't
-  set as headers; `coi-serviceworker` works, or the WASM fallback runs single
-  threaded. WebGPU doesn't need it.
-- Everything runs in a Web Worker so the page stays responsive; the worker
-  posts each accepted step (listing index, stack, names, printed text).
-
-## Order of work
-
-1. ONNX export + parity + ONNX gate (Python, CPU; can run while training).
-2. `bcvm/web.py`: async session API over `harness` (start, step, refusal,
-   stdout), plus the speculative decode loop driver.
-3. Worker + minimal page; Node/Playwright test harness; self-test vectors.
-4. UI: listing with highlighted ip, stack and names, two outputs, speed
-   control, examples that pass, clear refusals ("lists come in phase D").
-5. Measure in headless Chrome, upload weights, open the site PR.
-
-## Decisions for you
-
-- Which checkpoint ships: the latest phase C model (it also runs A and B
-  scripts), once its hand-written numbers are where you want them.
-- Hugging Face repo name (Cicero is `gmmeyer/cicero`), and the URL path.
-- Uploading to Hugging Face and pushing the site are yours to approve.
+1. Pick the checkpoint (latest phase C; it runs A and B scripts too).
+2. fp16 weights (~53 MB instead of 106): weight-only, computed in fp32;
+   ships only if `scripts/web_gate.py` gives the same results.
+3. Curate examples (`web/build.py` picks passing hand-written scripts by
+   length; titles are their first lines).
+4. Gate through the page itself in headless Chrome on the hand-written sets,
+   and quote those numbers in the post (the Cicero lesson).
+5. Upload `pythonlm.onnx` and `pythonlm.json` to Hugging Face
+   (`gmmeyer/pythonlm`?) and copy `web/dist/` minus `model/` to the site's
+   `pythonlm/`. Both are yours to approve.
