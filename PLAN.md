@@ -18,7 +18,7 @@ volume estimate, and what comes next.
 | Phase B data (format 2) | 3.01B tokens, 46.7M steps, 2.93M scripts, 6.8 GB |
 | Phase C data (format 2) | 3.01B tokens, 31.2M steps, 1.95M scripts, 6.5 GB |
 | Eval sets (test / natural / long / bignum) | Built for A–C, see below |
-| Hand-written eval set | **Yours to write**, see `eval/handwritten/README.md` |
+| Hand-written eval set | 200 scripts per phase for A–C, see [Hand-written eval sets](#hand-written-eval-sets) |
 | Trainer (packed, FlexAttention) | Done: `bcvm train`, `bcvm evalsteps`. Measured 632K tok/s at 26M params |
 | Model stepper, KV-cached batched runner | Done: `bcvm gate`, `bcvm run --ckpt` |
 | Phases D–F | Designed below; vocabulary already reserves their tokens |
@@ -128,8 +128,8 @@ is structurally unseen.
 **Natural scripts** were written by Claude subagents to `natural/SPEC.md`, then
 filtered by the same support check and differential check as everything
 else. The pipeline uses them as-is (15%) and with perturbed int/string
-literals (85%). The design's hand-written set must come from you, not from
-these.
+literals (85%). The hand-written eval sets (below) are separate, and none of
+their listings occur in training.
 
 ## Data volume estimate
 
@@ -193,7 +193,7 @@ Records hold source and CPython's stdout for end-to-end runs.
 | `eval_bignum` | ints up to 99,999 | 3K / 0.14M | 3K / 0.76M | 3K / 0.63M |
 
 Phase A's natural set comes from only ~14 held-out base scripts, so read it
-as a smoke test; your hand-written set is the real check.
+as a smoke test; the hand-written sets are the real check.
 
 ### Disk
 
@@ -206,12 +206,10 @@ as a smoke test; your hand-written set is the real check.
 
 ## Storage and transfer
 
-- **Code** → git: private repo `github.com/gmmeyer/pythonlm`
-  (`git clone git@github.com:gmmeyer/pythonlm.git`). Remote Login is also on
-  here, so `git clone greg@192.168.1.47:work/pythonlm` works on the LAN.
+- **Code** → git: `github.com/gmmeyer/pythonlm`.
 - **Data** → `~/work/pythonlm-data` on this Mac's SSD (override with
   `BCVM_DATA`). Copy it over the LAN, either pulled from the 5090 machine:
-  `rsync -a --partial --exclude '._*' greg@192.168.1.47:work/pythonlm-data/ /data/pythonlm-data/`,
+  `rsync -a --partial --exclude '._*' <user>@<mac>:work/pythonlm-data/ /data/pythonlm-data/`,
   or pushed from here: `scripts/sync_to_trainer.sh user@trainer:/data/pythonlm-data`.
   Re-runs only send new shards. Train from the 5090's local NVMe, not a
   network mount: memmap random reads over SMB/NFS are slow and flaky.
@@ -423,14 +421,18 @@ decoded alone at the end made c2's phase C gate take 49 minutes).
 
 ## Next steps
 
-1. **Phase A: your hand-written set.** a4 passes the generated-script gate
-   (99.81%); the design also requires 99% on ~200 scripts you write
-   (`eval/handwritten/phaseA/`), run with `bcvm run --ckpt`/a gate over them.
-2. **Phase B passed** (b3, 99.70%); your hand-written phase B set is next
-   for it. **Phase C** (c1, from b3) is training.
-3. **Baseline** (once, phase B): same-size model from source straight to
+1. **Hand-written gates.** Phases A and B pass on generated scripts (a4
+   99.81%, b3 99.70%); on the hand-written sets the latest model is at 88.5%
+   (A), 97.0% (B) and 49.0% (C). Each round finds generator gaps with
+   `scripts/coverage.py`, adds them to the edge drill, and continues training
+   (c3 is training on `train_edge2`/`train_edge3`; `train_edge4` is next).
+2. **Phase C** to 99% on generated scripts as well (c2: 2.4e-3 step error,
+   mostly `s[i]`).
+3. **Web demo** (`docs/WEB_DEMO.md`): the model in the browser, CPython 3.14
+   via Pyodide.
+4. **Baseline** (once, phase B): same-size model from source straight to
    stdout.
-4. **Phases D–F**, below.
+5. **Phases D–F**, below.
 
 ## Phases D–F design
 

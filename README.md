@@ -38,6 +38,6 @@ src/bcvm/
   evalsets.py    held-out eval sets
   train/         model, packed loader, trainer, model stepper + gate (torch)
 natural/         LLM-written natural scripts per phase (+ SPEC.md)
-eval/handwritten/  your hand-written eval scripts (to write)
+eval/handwritten/  hand-written eval scripts, 200 per phase (never in training)
 scripts/sync_to_trainer.sh
 ```
