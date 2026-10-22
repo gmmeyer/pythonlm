@@ -7,7 +7,8 @@ import os
 import sys
 import time
 
-ROOT = sys.argv[1]
+# under Pyodide (web/test/pyodide_run.mjs) the repo is mounted at /repo
+ROOT = "/repo" if sys.platform == "emscripten" else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "src"))
 from bcvm import harness  # noqa: E402
 

@@ -4,7 +4,11 @@ import json
 import os
 import sys
 
-ROOT, OUT = sys.argv[1], sys.argv[2]
+# under Pyodide (web/test/pyodide_run.mjs) the repo is mounted at /repo and the
+# current directory at /cwd
+PYODIDE = sys.platform == "emscripten"
+ROOT = "/repo" if PYODIDE else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+OUT = os.path.join("/cwd", sys.argv[1]) if PYODIDE else sys.argv[1]
 sys.path.insert(0, os.path.join(ROOT, "src"))
 from bcvm import support, tokens  # noqa: E402
 
