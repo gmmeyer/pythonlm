@@ -98,3 +98,22 @@ def test_edge_source_has_label_series_and_long_phase_a():
             continue
         lens.append(len(tokens.enc_listing(prog)))
     assert series >= 5 and max(lens) > 700
+
+
+def test_edge_source_has_swaps_and_many_names():
+    import random
+    from collections import Counter
+    from bcvm import pipeline
+    from bcvm.gen import make
+    rng = random.Random(8)
+    swaps, names = Counter(), []
+    for phase in "AB" * 40:
+        src, _ = make(rng, phase, "edge")
+        try:
+            prog, _ = pipeline.prepare(src, phase)
+        except pipeline.Skip:
+            continue
+        swaps.update(f"SWAP {ins.arg}" for ins in prog.instrs if ins.opname == "SWAP")
+        names.append(len(prog.names))
+    assert swaps["SWAP 3"] >= 10 and swaps["SWAP 2"] >= 5
+    assert sum(n > 10 for n in names) >= 10 and max(names) >= 16

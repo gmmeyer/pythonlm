@@ -45,7 +45,9 @@ class Gen:
         # edge: a drill of patterns the standard mix rarely makes and people
         # write: and/or used for their int value, chained comparisons with any
         # operators, range steps up to 25, long scripts full of near-identical
-        # labels ("Round 1", "Round 2", ...) that must be told apart when copied
+        # labels ("Round 1", "Round 2", ...) that must be told apart when copied,
+        # tuple assignment of two and three names (SWAP 2, SWAP 3), and scripts
+        # with 11-28 names (other sources stay within N0-N9)
         self.edge = edge
         self.series = [rng.choice(SERIES_STEMS), rng.randint(0, 3)]
         self.op_weights = [10, 8, 22, 30, 30] if arith else [30, 25, 18, 13, 14]
@@ -61,6 +63,10 @@ class Gen:
         pool = list(VAR_NAMES)
         rng.shuffle(pool)
         self.pool = pool[: rng.randint(3, 10)]
+        self.reuse = 0.55       # chance of assigning an existing name rather than a new one
+        if edge and rng.random() < 0.4:
+            self.pool = pool[: rng.randint(11, 28)]
+            self.reuse = 0.3
 
     # ------------------------------------------------------------ helpers
     def emit(self, depth, text):
@@ -78,7 +84,7 @@ class Gen:
     def fresh_or_existing(self, kind):
         existing = self.vars_of(kind, assignable=True)
         unused = [v for v in self.pool if v not in self.vars]
-        if existing and (not unused or self.chance(0.55)):
+        if existing and (not unused or self.chance(self.reuse)):
             return self.rng.choice(existing)
         if unused:
             return unused[0]
@@ -410,6 +416,25 @@ class Gen:
         self.emit(depth, f"{name} = {e.src}")
         self.set_var(name, "int", e.val)
 
+    def tuple_assign(self, depth):
+        """Two or three names reassigned at once, as people shuffle values:
+        `a, b, c = c, a, b` (SWAP 3), `x, y = y, x % y` (SWAP 2)."""
+        rng = self.rng
+        ints = self.vars_of("int", assignable=True)
+        k = 3 if len(ints) >= 3 and self.chance(0.7) else 2
+        if len(ints) < k:
+            return self.assign_int(depth)
+        targets = rng.sample(ints, k)
+        order = targets[:]
+        while order == targets:
+            rng.shuffle(order)
+        rhs = [Expr(v, ATOM, self.known.get(v), "int") for v in order]
+        if self.chance(0.4):
+            rhs[rng.randrange(k)] = self.int_expr(1, 2)
+        self.emit(depth, f"{', '.join(targets)} = {', '.join(e.src for e in rhs)}")
+        for name, e in zip(targets, rhs):
+            self.set_var(name, "int", e.val)
+
     def assign_bool(self, depth):
         name = self.fresh_or_existing("bool")
         c = self.cond()
@@ -474,6 +499,8 @@ class Gen:
             weights.update(bool=6, ifexp=3, passs=1)
         if self.C:
             weights.update(str=35, print=40)
+        if self.edge:
+            weights.update(tuple=8)
         if self.edge and self.B:
             weights.update(logic=25)
         if self.chance(0.02):
@@ -493,6 +520,8 @@ class Gen:
             self.ifexp_assign(depth)
         elif kind == "logic":
             self.logic_stmt(depth)
+        elif kind == "tuple":
+            self.tuple_assign(depth)
         else:
             self.emit(depth, "pass")
 
@@ -649,8 +678,15 @@ class Gen:
         else:
             n = rng.randint(2, 8)
         # seed a few variables so expressions have something to refer to
-        for _ in range(rng.randint(1, 3)):
-            self.assign_int(0)
+        if len(self.pool) > 10:
+            # many names: declare a run of them up front, as long hand-written scripts do
+            for name in self.pool[: rng.randint(len(self.pool) // 2, len(self.pool))]:
+                e = self.int_literal() if self.chance(0.6) else self.int_expr(1, 2)
+                self.emit(0, f"{name} = {e.src}")
+                self.set_var(name, "int", e.val)
+        else:
+            for _ in range(rng.randint(1, 3)):
+                self.assign_int(0)
         if self.C:
             for _ in range(rng.randint(1, 2)):
                 self.assign_str(0)
