@@ -91,8 +91,12 @@ Chromium 152:
    ships only if `scripts/web_gate.py` gives the same results.
 3. Curate examples (`web/build.py` picks passing hand-written scripts by
    length; titles are their first lines).
-4. Gate through the page itself in headless Chrome on the hand-written sets,
-   and quote those numbers in the post (the Cicero lesson).
+4. Gate the shipped artifact on all 600 hand-written scripts through the
+   browser stack, and quote those numbers in the post (the Cicero lesson):
+   `web/test/node_run.mjs` runs the page's Pyodide + `model.js` +
+   onnxruntime-web WASM in Node, in parallel shards (~13 steps/s each, 160K
+   steps): `for k in 0..7: node web/test/node_run.mjs <node_modules>
+   <model.onnx> <gate dir> all $k/8`. Spot-check a few in Chromium.
 5. Upload `pythonlm.onnx` and `pythonlm.json` to Hugging Face
    (`gmmeyer/pythonlm`?) and copy `web/dist/` minus `model/` to the site's
    `pythonlm/`. Both are yours to approve.

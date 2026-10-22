@@ -1,16 +1,19 @@
 // The whole browser stack in Node: Pyodide runs bcvm.web (compile, support
 // check, grammar, validator, speculative decoding) and calls web/model.js on
 // onnxruntime-web (WASM backend), on the first N hand-written scripts per
-// phase. Compares each script's pass/fail with the PyTorch gate's JSON.
+// phase ("all" for every script; "k/n" as a 5th argument runs every n-th
+// script from the k-th, to split the full sets over processes). Compares each
+// script's pass/fail with the PyTorch gate's JSON.
 //
 //   npm install pyodide@314.0.7 onnxruntime-web@1.30.0     (in a scratch directory)
-//   node web/test/node_run.mjs <scratch>/node_modules <model.onnx> <gate dir with gate_handwritten_X.json> [N]
+//   node web/test/node_run.mjs <scratch>/node_modules <model.onnx> <gate dir with gate_handwritten_X.json> [N|all] [k/n]
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { StepModel } from "../model.js";
 
-const [nm, onnxPath, gateDir, perPhase = "5"] = process.argv.slice(2);
+const [nm, onnxPath, gateDir, perPhase = "5", shard = "0/1"] = process.argv.slice(2);
+const [shardK, shardN] = shard.split("/").map(Number);
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const ort = await import(pathToFileURL(path.join(nm, "onnxruntime-web", "dist", "ort.node.min.mjs")).href);
 const meta = JSON.parse(readFileSync(onnxPath.replace(/\.onnx$/, ".json"), "utf8"));
@@ -22,7 +25,8 @@ const py = await loadPyodide({ indexURL: pyDir + path.sep });
 py.FS.mkdirTree("/repo");
 py.FS.mount(py.FS.filesystems.NODEFS, { root: repo.replaceAll("\\", "/") }, "/repo");
 py.globals.set("js_model", model);
-py.globals.set("PER_PHASE", Number(perPhase));
+py.globals.set("PER_PHASE", perPhase === "all" ? 100000 : Number(perPhase));
+py.globals.set("SHARD", py.toPy([shardK, shardN]));
 
 const t0 = Date.now();
 const rows = (await py.runPythonAsync(`
@@ -35,7 +39,7 @@ m = web.JsModel(js_model)
 rows = []
 for ph in "ABC":
     d = f"/repo/eval/handwritten/phase{ph}"
-    for name in sorted(f for f in os.listdir(d) if f.endswith(".py"))[:PER_PHASE]:
+    for name in sorted(f for f in os.listdir(d) if f.endswith(".py"))[:PER_PHASE][SHARD[0]::SHARD[1]]:
         src = open(os.path.join(d, name)).read()
         prog = Program(src)
         support.check(prog, ph)
@@ -58,6 +62,7 @@ for (const ph of "ABC") {
     if (failing && ok === failing.has(name)) differ.push(`${name} ${ok ? "passes" : "fails"}`);
   }
   console.log(`phase ${ph}: ${mine.filter((r) => r[2]).length}/${mine.length} match`);
+  console.log(`RESULTS ${ph} ${JSON.stringify(mine.map((r) => [r[1], r[2]]))}`);
 }
 console.log(`${steps} steps in ${secs.toFixed(0)}s (${(steps / secs).toFixed(1)} steps/s, ${(forwards / steps).toFixed(2)} forwards per step); ` +
   `differs from the torch gate on ${differ.length ? differ.join(", ") : "none"}`);
