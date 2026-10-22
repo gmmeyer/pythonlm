@@ -256,6 +256,8 @@ pythonlm-data/
 | b3 | b2 continued | B 45% (6.0B available) + B arith 30% + A 15% + A arith 10%, 3.0B tokens, lr 3e-4, 80 min | B: **2.2e-5**; 56 wrong in 2.5M: `%` 35, `//` 16, `STORE_NAME` 4; the `100101` copy errors are gone (0 `LOAD_CONST`) without the copy drill. natural 3.0e-5, long 4.1e-5, bignum 7.8e-3. Phase A after B: **2.8e-5** | **99.70% (9,986 of 10,016, full set): phase B gate passed** on generated scripts; free-running 1.7e-5 (all 43 divergences `%`/`//`); 0 refusals; 1,000–10,000-step scripts 386/387 |
 | c1 | b3 continued | C 50% + C arith 15% + C copy 10% + B 10% + B arith 5% + A 5% + A arith 5%, 3.0B tokens, lr 8e-4, 80 min | C: **5.3e-3**; string indexing `s[i]` 17% wrong (8,508 of 48,752; still falling, 78% at step 1000), then `<=` 666, `LOAD_CONST` 432, string `+` 329 | not run |
 | c2 | c1 continued | C 40% + C arith 10% + C copy 5% + C edge 15% + B 8% + B edge 7% + B arith 3% + A 5% + A edge 5% + A arith 2%, 3.0B tokens, lr 5e-4, 80 min | C: **2.4e-3**; `s[i]` 7.1% wrong (3,465 of 48,752), `<=` 2.1% (317), `LOAD_NAME` 246, string `+` 188, `CALL` 188 | not run on `eval_test`; hand-written A 88.5%, B 97.0% (below) |
+| c3 | c2 continued | C 25% + C arith 7% + C copy 3% + C edge3 35% + B 5% + B edge3 7% + B arith 2% + A 3% + A edge2 10% + A arith 3%, 4.0B tokens, lr 5e-4, 110 min | C: **1.3e-3**; `s[i]` fixed (3,465 wrong → under 37), but string `+` 885 (spaces-only strings lose their quotes), `<=` 658 (single-character string comparisons), `*` 586 | hand-written A 97.5%, B 98.0%, C 57.5% |
+| c4 | c3 continued | C 35% + C arith 6% + C copy 4% + C edge4 25% + C edge3 5% + B 5% + B edge3 6% + B arith 2% + A 3% + A edge2 7% + A arith 2%, 3.6B tokens, lr 4e-4 | running | |
 
 a1 and a2 used format 1 data, now in `$BCVM_DATA/v1/`. b1's `LOAD_CONST` and
 `CALL` errors (167 of 341) all come from one held-out natural script that prints
@@ -333,6 +335,7 @@ runs them.
 | a4 | 58.5% (80 validator stops) | | |
 | b3 | 70.0% | 91.5% | |
 | c2 (edge drill) | 88.5% | 97.0% | 49.0% (29 validator stops) |
+| c3 (edge2, edge3) | 97.5% (0 validator stops) | 98.0% | 57.5% (24 validator stops) |
 
 They expose what the generated sets don't:
 
@@ -418,6 +421,18 @@ failures:
 chains of 2–9 targets, padding idioms, prints of 0–10 arguments. The gate now
 stops a script at twice its reference step count + 100 (one runaway script
 decoded alone at the end made c2's phase C gate take 49 minutes).
+
+**c3** (edge2 for A, edge3 for B and C): hand-written A 97.5% (from 88.5%: no
+more validator stops; the many-name and `SWAP 3` failures are gone, 3 label
+copies and 2 divisions remain), B 98.0% (2 `%`, 1 `//`, 1 stop), C 57.5%
+(from 49.0%). On generated phase C, step error 1.3e-3 (c2 2.4e-3): string
+indexing went from 3,465 wrong steps to under 37, the volume argument holding.
+It regressed on string `+` (strings of spaces: `"  2" + " "` loses track of
+which quote closes which string) and `<=` on single characters, likely from
+standard phase C data falling to 25% of the mix. Most of C's 85 failures are
+what edge4 covers and c3 never saw: about 20 `sep`/`end`, 18 padding and
+string-repeat counts, 15 validator stops on empty strings and long prints.
+c4 adds edge4 and raises standard C back to 35%.
 
 ## Next steps
 
