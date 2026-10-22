@@ -8,7 +8,7 @@ are unknown; the generator keeps loops bounded by construction and leaves the
 rest to the reference interpreter, which discards scripts that break a limit.
 """
 from .. import config
-from .common import VAR_NAMES, WORDS, pattern_text, random_text, small_int, string_literal
+from .common import SERIES_STEMS, VAR_NAMES, WORDS, pattern_text, random_text, small_int, string_literal
 
 BOUND = config.INT_BOUND
 
@@ -44,8 +44,10 @@ class Gen:
         self.copy = copy
         # edge: a drill of patterns the standard mix rarely makes and people
         # write: and/or used for their int value, chained comparisons with any
-        # operators, range steps up to 25, scripts full of distinct labels
+        # operators, range steps up to 25, long scripts full of near-identical
+        # labels ("Round 1", "Round 2", ...) that must be told apart when copied
         self.edge = edge
+        self.series = [rng.choice(SERIES_STEMS), rng.randint(0, 3)]
         self.op_weights = [10, 8, 22, 30, 30] if arith else [30, 25, 18, 13, 14]
         self.B = phase >= "B"
         self.C = phase >= "C"
@@ -241,6 +243,12 @@ class Gen:
 
     # ------------------------------------------------------------ str exprs (phase C)
     def str_literal_expr(self):
+        if self.edge and self.chance(0.55):
+            self.series[1] += self.rng.choice([1, 1, 1, 2, 0])
+            s = f"{self.series[0]} {self.series[1]}"
+            if self.chance(0.3):
+                s += self.rng.choice([": ", " - ", " "]) + self.rng.choice(WORDS)
+            return Expr(repr(s), ATOM, s, "str")
         s = pattern_text(self.rng) if self.copy and self.chance(0.6) else string_literal(self.rng)
         return Expr(repr(s), ATOM, s, "str")
 
@@ -637,7 +645,7 @@ class Gen:
     def script(self):
         rng = self.rng
         if self.phase == "A":
-            n = rng.randint(2, 18)
+            n = rng.randint(10, 45) if self.edge else rng.randint(2, 18)
         else:
             n = rng.randint(2, 8)
         # seed a few variables so expressions have something to refer to

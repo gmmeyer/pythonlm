@@ -51,6 +51,12 @@ def string_literal(rng, kind=None):
     return s
 
 
+SERIES_STEMS = [
+    "Round", "Step", "Day", "Month", "Week", "Year", "Turn", "Level", "Customer", "Generation",
+    "tick", "Floor", "Player", "Order", "Batch", "Phase", "Lap", "Test", "Case", "Item", "Box",
+    "Room", "Stage", "Wave", "Hour", "Game", "Pass", "Trial", "Shelf", "Gate",
+]
+
 PATTERN_ALPHABETS = ["01", "01", "012", "10", "ab", "abc", "xy", "xo", "-=", "*.", "ACGT", string.digits]
 
 

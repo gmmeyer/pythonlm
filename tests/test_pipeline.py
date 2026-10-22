@@ -81,3 +81,20 @@ def test_edge_source_has_value_logic_chains_and_steps():
     assert re.search(r"range\([^,]+,[^,]+,\s*-?(1[1-9]|2[0-5])\)", text)
     assert len(re.findall(r"(?m)^.*([<>]=?|[!=]=)[^<>=!\n]+([<>]=?|[!=]=)[^<>=!\n]+([<>]=?|[!=]=)", text)) >= 3
     assert grammar.generate(random.Random(3), "B") == grammar.generate(random.Random(3), "B", edge=False)
+
+
+def test_edge_source_has_label_series_and_long_phase_a():
+    import random
+    from bcvm import pipeline, tokens
+    from bcvm.gen import make
+    rng = random.Random(6)
+    lens, series = [], 0
+    for _ in range(60):
+        src, _ = make(rng, "A", "edge")
+        series += any(f"'{w} " in src for w in ("Round", "Step", "Day", "Month", "Turn", "Level", "Customer", "tick"))
+        try:
+            prog, _ = pipeline.prepare(src, "A")
+        except pipeline.Skip:
+            continue
+        lens.append(len(tokens.enc_listing(prog)))
+    assert series >= 5 and max(lens) > 700
