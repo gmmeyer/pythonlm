@@ -259,7 +259,8 @@ pythonlm-data/
 | c3 | c2 continued | C 25% + C arith 7% + C copy 3% + C edge3 35% + B 5% + B edge3 7% + B arith 2% + A 3% + A edge2 10% + A arith 3%, 4.0B tokens, lr 5e-4, 110 min | C: **1.3e-3**; `s[i]` fixed (3,465 wrong → under 37), but string `+` 885 (spaces-only strings lose their quotes), `<=` 658 (single-character string comparisons), `*` 586 | hand-written A 97.5%, B 98.0%, C 57.5% |
 | c4 | c3 continued | C 35% + C arith 6% + C copy 4% + C edge4 25% + C edge3 5% + B 5% + B edge3 6% + B arith 2% + A 3% + A edge2 7% + A arith 2%, 3.6B tokens, lr 4e-4, 100 min | C: **3.6e-4** (string `+` 235, `FORMAT_SIMPLE` 154, `<=` 152); A after C 1.4e-4, B 5.7e-5 | first 2,000 of C: **98.3%**; hand-written A 95.0%, B **99.0%**, C 77.0%. Shipped to the web demo |
 | c5 | c4 continued | C 30% + C arith 5% + C copy 3% + C edge5 25% + C edge4 7% + B 5% + B edge3 5% + B arith 2% + A 3% + A edge5 10% + A edge2 3% + A arith 2%, 4.0B tokens, lr 3e-4, seed 5, 112 min | C: **1.1e-4** (`CALL` 107, `<=` 36, `%` 33 of 2.1M steps) | first 2,000 of C: **98.55%**; hand-written A **99.0%**, B 99.0%, C **90.5%** |
-| c6 | c5 continued | C 30% + C arith 5% + C copy 3% + C edge6 25% + C edge5 8% + C edge4 3% + B 5% + B edge3 4% + B arith 2% + A 3% + A edge5 8% + A edge2 2% + A arith 2%, 3.6B tokens, lr 2.5e-4, seed 6 | running | |
+| c6 | c5 continued | C 30% + C arith 5% + C copy 3% + C edge6 25% + C edge5 8% + C edge4 3% + B 5% + B edge3 4% + B arith 2% + A 3% + A edge5 8% + A edge2 2% + A arith 2%, 3.6B tokens, lr 2.5e-4, seed 6, 102 min | C: 3.0e-4 (`<=` 291, nearly all one script family: `'A' <= '4'` True; `BUILD_STRING` 182, closing the string at an interpolation) | first 2,000 of C: 97.35% (31 validator stops); hand-written A 97.5%, B 98.5%, C 91.5% |
+| c56avg | the average of c5's and c6's weights | | C: 2.0e-4 (`<=` 286, the same family), A **4.5e-5**, B **5.2e-5** | first 2,000 of C: **99.55%**; hand-written A **99.5%**, B **99.5%**, C **93.5%** (0 validator stops). Shipped to the web demo |
 
 a1 and a2 used format 1 data, now in `$BCVM_DATA/v1/`. b1's `LOAD_CONST` and
 `CALL` errors (167 of 341) all come from one held-out natural script that prints
@@ -340,6 +341,8 @@ runs them.
 | c3 (edge2, edge3) | 97.5% (0 validator stops) | 98.0% | 57.5% (24 validator stops) |
 | c4 (edge4) | 95.0% (7 of 11 divergences `LOAD_CONST`: label copies) | **99.0%** | 77.0% (18 validator stops) |
 | c5 (edge5) | **99.0%** (2 `//`) | **99.0%** | **90.5%** (5 validator stops) |
+| c6 (edge6) | 97.5% | 98.5% | 91.5% (3 validator stops) |
+| c56avg (c5 and c6 averaged) | **99.5%** | **99.5%** | **93.5%** (0 validator stops) |
 
 They expose what the generated sets don't:
 
@@ -495,6 +498,20 @@ arguments and f-strings of repeated parts, ASCII-art rows; the pipeline
 samples string comparisons at weight 4, and `BUILD_STRING` and steps leaving
 3+ identical items in a row at 3. String comparisons go from 2.5% to 7.9%
 of sampled phase C steps. `phaseC/train_edge6`: 1.5B tokens.
+
+**c6** fixed 9 of c5's 19 phase C failures, including the targeted ones
+(`'+3' == '3'`, `'?!?' == '?!?'`, the stops on `True True True`, the extra
+`'0 '`), and broke 7 others; phase A lost 4 scripts to `%` and `//`, and
+generated C fell to 97.35%. It overshot: teacher-forced, it now closes a
+`BUILD_STRING` result at an interpolation (`'percent: '` then a new string),
+the reverse of c4's merging, and says `'A' <= '4'`. **Averaging c5's and
+c6's weights** (c6 continued c5, so they share a basin) keeps c6's fixes
+without most of the damage: hand-written A 99.5%, B 99.5%, C 93.5% with no
+validator stops, generated C 99.55%, better than either run on every set.
+Teacher-forced C error is 2.0e-4 against c5's 1.1e-4, nearly all the `<=`
+family, whose wrong steps rarely change the output. String `==` is still
+the largest group of hand-written C failures (`==` 4 and `!=` 1 of 10
+divergences, in 13 failing scripts).
 
 ## Next steps
 
