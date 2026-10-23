@@ -258,6 +258,7 @@ pythonlm-data/
 | c2 | c1 continued | C 40% + C arith 10% + C copy 5% + C edge 15% + B 8% + B edge 7% + B arith 3% + A 5% + A edge 5% + A arith 2%, 3.0B tokens, lr 5e-4, 80 min | C: **2.4e-3**; `s[i]` 7.1% wrong (3,465 of 48,752), `<=` 2.1% (317), `LOAD_NAME` 246, string `+` 188, `CALL` 188 | not run on `eval_test`; hand-written A 88.5%, B 97.0% (below) |
 | c3 | c2 continued | C 25% + C arith 7% + C copy 3% + C edge3 35% + B 5% + B edge3 7% + B arith 2% + A 3% + A edge2 10% + A arith 3%, 4.0B tokens, lr 5e-4, 110 min | C: **1.3e-3**; `s[i]` fixed (3,465 wrong → under 37), but string `+` 885 (spaces-only strings lose their quotes), `<=` 658 (single-character string comparisons), `*` 586 | hand-written A 97.5%, B 98.0%, C 57.5% |
 | c4 | c3 continued | C 35% + C arith 6% + C copy 4% + C edge4 25% + C edge3 5% + B 5% + B edge3 6% + B arith 2% + A 3% + A edge2 7% + A arith 2%, 3.6B tokens, lr 4e-4, 100 min | C: **3.6e-4** (string `+` 235, `FORMAT_SIMPLE` 154, `<=` 152); A after C 1.4e-4, B 5.7e-5 | first 2,000 of C: **98.3%**; hand-written A 95.0%, B **99.0%**, C 77.0%. Shipped to the web demo |
+| c5 | c4 continued | C 30% + C arith 5% + C copy 3% + C edge5 25% + C edge4 7% + B 5% + B edge3 5% + B arith 2% + A 3% + A edge5 10% + A edge2 3% + A arith 2%, 4.0B tokens, lr 3e-4, seed 5 | running | |
 
 a1 and a2 used format 1 data, now in `$BCVM_DATA/v1/`. b1's `LOAD_CONST` and
 `CALL` errors (167 of 341) all come from one held-out natural script that prints
@@ -437,6 +438,37 @@ c4 adds edge4 and raises standard C back to 35%.
 
 **c4**: hand-written C 77.0% (from 57.5%), B 99.0%, the first hand-written
 set at the bar. A slipped to 95.0% (label copying: phase A is 12% of the mix).
+
+c4's 46 phase C failures, with the model rerun on each validator stop to see
+what it wrote:
+
+- **A string op with another string below its operands** (8 of 15 stops):
+  `print("both together:", a + b)` has `'both together:' 'asap/' 'lol'` on
+  the stack, and c4 writes one string `'both together:asap/lol'`, merging
+  the string below into the result (likewise `BUILD_STRING`). The generator
+  never made it: multi-argument prints took only literals, names,
+  comparisons and int expressions.
+- **Near-identical strings compared** (7 divergences): `'xyyxyx' == 'xyxyyx'`,
+  `'+1' == '1'`, `'.#.#.#.#' == '#.#.#.#.'` all True. Generated comparisons
+  were between unrelated strings.
+- **Repeat counts** (6 `*` divergences, some stops): `"~" * 27` one or many
+  off, `"xo" * -1` not empty. Generated counts were 0–6 outside the padding
+  idiom. (`"~" * 27` with both literal is folded by the compiler; the
+  hand-written ones count with a name.)
+- Indexing long strings near the end, f-strings of bools, `SWAP` of strings.
+
+Phase A: 7 of 10 failures copy the wrong one of two labels that differ late
+(`"Hour 1: stove lit"` / `"Hour 1: stove out"`, `"Car at 538 s again"` /
+`"Car at 538 s"`); the label series varied only a number after the stem.
+
+The edge source now makes all of these (`edge5`), and the pipeline samples a
+string op above a string at weight 4 and a string constant load at weight 3.
+Share of sampled steps, edge4 → edge5: string op above a string 0% → 0.9%,
+near-miss comparisons 0.03% → 0.7%, counts past 6 0.2% → 1.0%; phase A
+near-identical label loads 0.2% → 1.7%. `phaseC/train_edge5` (1.03B tokens)
+and `phaseA/train_edge5` (0.60B). The train stream's seed was 0 for every
+`--init` run, so each began on the same first shard of each source; c5 uses
+`--seed 5`.
 
 ## Next steps
 
