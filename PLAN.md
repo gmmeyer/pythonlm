@@ -258,7 +258,7 @@ pythonlm-data/
 | c2 | c1 continued | C 40% + C arith 10% + C copy 5% + C edge 15% + B 8% + B edge 7% + B arith 3% + A 5% + A edge 5% + A arith 2%, 3.0B tokens, lr 5e-4, 80 min | C: **2.4e-3**; `s[i]` 7.1% wrong (3,465 of 48,752), `<=` 2.1% (317), `LOAD_NAME` 246, string `+` 188, `CALL` 188 | not run on `eval_test`; hand-written A 88.5%, B 97.0% (below) |
 | c3 | c2 continued | C 25% + C arith 7% + C copy 3% + C edge3 35% + B 5% + B edge3 7% + B arith 2% + A 3% + A edge2 10% + A arith 3%, 4.0B tokens, lr 5e-4, 110 min | C: **1.3e-3**; `s[i]` fixed (3,465 wrong → under 37), but string `+` 885 (spaces-only strings lose their quotes), `<=` 658 (single-character string comparisons), `*` 586 | hand-written A 97.5%, B 98.0%, C 57.5% |
 | c4 | c3 continued | C 35% + C arith 6% + C copy 4% + C edge4 25% + C edge3 5% + B 5% + B edge3 6% + B arith 2% + A 3% + A edge2 7% + A arith 2%, 3.6B tokens, lr 4e-4, 100 min | C: **3.6e-4** (string `+` 235, `FORMAT_SIMPLE` 154, `<=` 152); A after C 1.4e-4, B 5.7e-5 | first 2,000 of C: **98.3%**; hand-written A 95.0%, B **99.0%**, C 77.0%. Shipped to the web demo |
-| c5 | c4 continued | C 30% + C arith 5% + C copy 3% + C edge5 25% + C edge4 7% + B 5% + B edge3 5% + B arith 2% + A 3% + A edge5 10% + A edge2 3% + A arith 2%, 4.0B tokens, lr 3e-4, seed 5 | running | |
+| c5 | c4 continued | C 30% + C arith 5% + C copy 3% + C edge5 25% + C edge4 7% + B 5% + B edge3 5% + B arith 2% + A 3% + A edge5 10% + A edge2 3% + A arith 2%, 4.0B tokens, lr 3e-4, seed 5, 112 min | C: **1.1e-4** (`CALL` 107, `<=` 36, `%` 33 of 2.1M steps) | first 2,000 of C: **98.55%**; hand-written A **99.0%**, B 99.0%, C **90.5%** |
 
 a1 and a2 used format 1 data, now in `$BCVM_DATA/v1/`. b1's `LOAD_CONST` and
 `CALL` errors (167 of 341) all come from one held-out natural script that prints
@@ -338,6 +338,7 @@ runs them.
 | c2 (edge drill) | 88.5% | 97.0% | 49.0% (29 validator stops) |
 | c3 (edge2, edge3) | 97.5% (0 validator stops) | 98.0% | 57.5% (24 validator stops) |
 | c4 (edge4) | 95.0% (7 of 11 divergences `LOAD_CONST`: label copies) | **99.0%** | 77.0% (18 validator stops) |
+| c5 (edge5) | **99.0%** (2 `//`) | **99.0%** | **90.5%** (5 validator stops) |
 
 They expose what the generated sets don't:
 
@@ -469,6 +470,16 @@ near-identical label loads 0.2% → 1.7%. `phaseC/train_edge5` (1.03B tokens)
 and `phaseA/train_edge5` (0.60B). The train stream's seed was 0 for every
 `--init` run, so each began on the same first shard of each source; c5 uses
 `--seed 5`.
+
+**c5**: hand-written C 90.5% (from 77.0%), A 99.0% (from 95.0%: no label
+copies left, two `//`), B 99.0%; generated C 98.55%, teacher-forced C step
+error 1.1e-4 (c4 3.6e-4). Of C's 19 failures, 8 are still string `==`/`!=`
+(`'+3' == '3'`, `'aab' == 'aaab'`), 4 are a `BUILD_STRING` or `sep` text off
+by a repeat (`'[] [bar] []'` with an extra `[]`, `' = '` printed between
+every word), and 5 are validator stops: rerun on those steps, c5 writes one
+item too few where the stack holds a run of identical items (`print NULL True
+True` and a comparison giving `True` becomes two `True`s, not three), the
+counting-runs weakness again, on stack entries instead of characters.
 
 ## Next steps
 
