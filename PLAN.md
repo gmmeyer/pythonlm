@@ -257,7 +257,7 @@ pythonlm-data/
 | c1 | b3 continued | C 50% + C arith 15% + C copy 10% + B 10% + B arith 5% + A 5% + A arith 5%, 3.0B tokens, lr 8e-4, 80 min | C: **5.3e-3**; string indexing `s[i]` 17% wrong (8,508 of 48,752; still falling, 78% at step 1000), then `<=` 666, `LOAD_CONST` 432, string `+` 329 | not run |
 | c2 | c1 continued | C 40% + C arith 10% + C copy 5% + C edge 15% + B 8% + B edge 7% + B arith 3% + A 5% + A edge 5% + A arith 2%, 3.0B tokens, lr 5e-4, 80 min | C: **2.4e-3**; `s[i]` 7.1% wrong (3,465 of 48,752), `<=` 2.1% (317), `LOAD_NAME` 246, string `+` 188, `CALL` 188 | not run on `eval_test`; hand-written A 88.5%, B 97.0% (below) |
 | c3 | c2 continued | C 25% + C arith 7% + C copy 3% + C edge3 35% + B 5% + B edge3 7% + B arith 2% + A 3% + A edge2 10% + A arith 3%, 4.0B tokens, lr 5e-4, 110 min | C: **1.3e-3**; `s[i]` fixed (3,465 wrong → under 37), but string `+` 885 (spaces-only strings lose their quotes), `<=` 658 (single-character string comparisons), `*` 586 | hand-written A 97.5%, B 98.0%, C 57.5% |
-| c4 | c3 continued | C 35% + C arith 6% + C copy 4% + C edge4 25% + C edge3 5% + B 5% + B edge3 6% + B arith 2% + A 3% + A edge2 7% + A arith 2%, 3.6B tokens, lr 4e-4 | running | |
+| c4 | c3 continued | C 35% + C arith 6% + C copy 4% + C edge4 25% + C edge3 5% + B 5% + B edge3 6% + B arith 2% + A 3% + A edge2 7% + A arith 2%, 3.6B tokens, lr 4e-4, 100 min | C: **3.6e-4** (string `+` 235, `FORMAT_SIMPLE` 154, `<=` 152); A after C 1.4e-4, B 5.7e-5 | first 2,000 of C: **98.3%**; hand-written A 95.0%, B **99.0%**, C 77.0%. Shipped to the web demo |
 
 a1 and a2 used format 1 data, now in `$BCVM_DATA/v1/`. b1's `LOAD_CONST` and
 `CALL` errors (167 of 341) all come from one held-out natural script that prints
@@ -336,6 +336,7 @@ runs them.
 | b3 | 70.0% | 91.5% | |
 | c2 (edge drill) | 88.5% | 97.0% | 49.0% (29 validator stops) |
 | c3 (edge2, edge3) | 97.5% (0 validator stops) | 98.0% | 57.5% (24 validator stops) |
+| c4 (edge4) | 95.0% (7 of 11 divergences `LOAD_CONST`: label copies) | **99.0%** | 77.0% (18 validator stops) |
 
 They expose what the generated sets don't:
 
@@ -433,6 +434,9 @@ standard phase C data falling to 25% of the mix. Most of C's 85 failures are
 what edge4 covers and c3 never saw: about 20 `sep`/`end`, 18 padding and
 string-repeat counts, 15 validator stops on empty strings and long prints.
 c4 adds edge4 and raises standard C back to 35%.
+
+**c4**: hand-written C 77.0% (from 57.5%), B 99.0%, the first hand-written
+set at the bar. A slipped to 95.0% (label copying: phase A is 12% of the mix).
 
 ## Next steps
 

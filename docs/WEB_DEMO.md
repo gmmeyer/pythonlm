@@ -86,9 +86,13 @@ Chromium 152:
 
 ## Before publishing
 
-1. Pick the checkpoint (latest phase C; it runs A and B scripts too).
-2. fp16 weights (~53 MB instead of 106): weight-only, computed in fp32;
-   ships only if `scripts/web_gate.py` gives the same results.
+1. ~~Pick the checkpoint~~: c4, on Hugging Face as `gmmeyer/pythonlm`
+   (**private** until launch: `pythonlm.onnx` fp16, `pythonlm.json`, `pythonlm.pt`,
+   model card). Make it public with
+   `hf repos settings gmmeyer/pythonlm --no-private` once a license is chosen
+   (add it to the card's metadata).
+2. ~~fp16 weights~~: done (`bcvm export --fp16`); identical results to fp32 and
+   to the PyTorch gate on 60 hand-written scripts.
 3. Curate examples (`web/build.py` picks passing hand-written scripts by
    length; titles are their first lines).
 4. Gate the shipped artifact on all 600 hand-written scripts through the
