@@ -25,6 +25,11 @@ PAGE = ["index.html", "app.js", "worker.js", "model.js"]
 KIND = {"A": "Numbers", "B": "Loops", "C": "Strings"}
 # The post's division example first, then hand-written scripts.
 FIRST = ("Long division", "n = 487\nq = n // 13\nprint(q)\nprint(n % 13)\n")
+# Phase C scripts rarely open with a comment to title them by, so these are
+# picked by hand for output worth watching; phases A and B use scripts that do.
+CURATED = {"C": [("hc1_002.py", "Birthday banner"), ("hc2_032.py", "Roman numerals"),
+                 ("hc4_009.py", "Tic-tac-toe board"), ("hc3_030.py", "Run-length encoding"),
+                 ("hc1_032.py", "Palindromes"), ("hc1_018.py", "Battery meter")]}
 
 
 def runtime_modules():
@@ -53,6 +58,12 @@ def examples(gate_dir, per_phase, max_steps):
         with open(os.path.join(gate_dir, f"gate_handwritten_{ph}.json")) as f:
             failing = {r["file"] for r in json.load(f)["failures"]}
         d = os.path.join(ROOT, "eval", "handwritten", f"phase{ph}")
+        if ph in CURATED:
+            for name, title in CURATED[ph]:
+                assert name not in failing, f"{name} fails with this model"
+                with open(os.path.join(d, name)) as f:
+                    out.append(dict(title=f"{KIND[ph]}: {title}", src=f.read()))
+            continue
         picks = []
         for name in sorted(os.listdir(d)):
             if not name.endswith(".py") or name in failing:
@@ -62,9 +73,10 @@ def examples(gate_dir, per_phase, max_steps):
             prog = Program(src)
             support.check(prog, ph)
             steps = refvm.run(prog, 10_000).steps
-            if steps <= max_steps:
-                lines = [ln.strip() for ln in src.splitlines() if ln.strip()]
-                title = lines[0].lstrip("# ") if lines[0].startswith("#") else lines[0]
+            first = src.strip().splitlines()[0]
+            if steps <= max_steps and first.startswith("#"):    # its comment is the title
+                title = first.lstrip("# ")
+                title = title[0].upper() + title[1:]
                 title = title if len(title) <= 56 else title[:55] + "…"
                 picks.append((steps, dict(title=f"{KIND[ph]}: {title}", src=src)))
         # a spread of lengths rather than only the shortest
