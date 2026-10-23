@@ -178,7 +178,7 @@ def test_edge_source_prints_pads_and_chains_in_phase_c():
         kept.append(src)
     text = "\n".join(kept)
     assert len(set(re.findall(r"sep=('[^']*'|\"[^\"]*\")", text))) >= 8
-    assert len(re.findall(r"\* \(\d+ - len\(\w+\)\)", text)) >= 10
+    assert len(re.findall(r"\* \(\d+ - len\(\w+\)\)", text)) >= 6
     assert len(re.findall(r"(?m)^\s*(\w+ = ){3,}", text)) >= 5
     assert "''" in text
 
@@ -246,3 +246,39 @@ def test_step_weight_favours_labels_and_strings_above_strings():
         w.setdefault((ins.opname, ins.arg), []).append(pipeline.step_weight(prog, trace, i))
     assert w[("LOAD_CONST", "Total")] == [3.0] and w[("LOAD_CONST", "ab")] == [1.0]
     assert w[("BINARY_OP", "+")] == [4.0, 1.0]      # above 'Total', then alone
+
+
+def test_edge_source_compares_strings_and_makes_runs():
+    """c5's misses: equal and near-identical strings compared ('aab' == 'aaab'),
+    and runs of identical items on the stack (`print(t, t, t, a == b)`)."""
+    import random
+    from collections import Counter
+    from bcvm import pipeline
+    from bcvm.gen import make
+    rng = random.Random(17)
+    seen = Counter()
+    for _ in range(120):
+        src, _ = make(rng, "C", "edge")
+        try:
+            prog, trace = pipeline.prepare(src, "C")
+        except pipeline.Skip:
+            continue
+        for st in trace.states[:-1]:
+            ins, stk = prog.instrs[st.ip], st.stack
+            if ins.opname == "COMPARE_OP" and len(stk) >= 2 and type(stk[-1]) is str and type(stk[-2]) is str:
+                a, b = stk[-2], stk[-1]
+                seen["equal" if a == b else "one longer" if abs(len(a) - len(b)) == 1 else "other"] += 1
+            if pipeline._has_run(stk):
+                seen["run"] += 1
+    assert seen["equal"] >= 100 and seen["one longer"] >= 50 and seen["run"] >= 200, seen
+
+
+def test_step_weight_favours_string_comparisons_and_runs():
+    from bcvm import pipeline, refvm
+    from bcvm.program import Program
+    prog = Program("t = 'ab'\nprint(t == 'ab', t, t, t)\n")
+    trace = refvm.run(prog)
+    w = [(prog.instrs[trace.states[i].ip].opname, pipeline.step_weight(prog, trace, i)) for i in range(trace.steps)]
+    assert ("COMPARE_OP", 4.0) in w
+    loads = [x for op, x in w if op == "LOAD_NAME"]
+    assert loads[-3:] == [1.0, 1.0, 3.0]    # the third 'ab' in a row

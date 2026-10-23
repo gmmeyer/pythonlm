@@ -96,13 +96,27 @@ def step_weight(prog, trace, i):
         n = prog.instrs[s0.ip].arg if op == "BUILD_STRING" else 2
         if len(s0.stack) > n and type(s0.stack[-n - 1]) is str and any(type(v) is str for v in s0.stack[-n:]):
             return 4.0    # a string op above another string: c4 merged them into its result
+    if op == "COMPARE_OP" and any(type(v) is str for v in s0.stack[-2:]):
+        return 4.0        # string comparisons: near-identical strings fooled c4 and c5
     if op == "BINARY_OP":
         ins = prog.instrs[s0.ip]
         if tokens.work_kind(ins, s0):
             return 4.0    # // and %: the hardest arithmetic, see scripts/arith_probe.py
         if ins.arg in ("*", "*="):
-            return 2.0
+            return 3.0 if _has_run(s1.stack) else 2.0
+    if op == "BUILD_STRING" or _has_run(s1.stack):
+        return 3.0        # counting out repeated parts and runs of identical items
     return 1.0
+
+
+def _has_run(stack, n=3):
+    """n or more identical ints, bools or strings in a row."""
+    run = 1
+    for a, b in zip(stack, stack[1:]):
+        run = run + 1 if type(a) is type(b) and type(a) in (int, bool, str) and a == b else 1
+        if run >= n:
+            return True
+    return False
 
 
 def sample_steps(rng, prog, trace, k):

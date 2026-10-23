@@ -119,6 +119,29 @@ def label_text(rng):
     return f"{word} from {stem.lower()} {n}"
 
 
+def row_text(rng):
+    """An ASCII-art row with runs inside it: '#  o        o  #', '|..X....X..|'."""
+    edge, fill, mark = rng.choice("#|+[*"), rng.choice("  .-_"), rng.choice("oX*@#")
+    parts = [fill * rng.randint(0, 9) + mark for _ in range(rng.randint(1, 4))]
+    s = edge + "".join(parts) + fill * rng.randint(0, 9)
+    return (s + {"[": "]"}.get(edge, edge))[:48]
+
+
+def run_variant(rng, s):
+    """s with one run a character longer or shorter, or a sign added or
+    dropped ('aab' / 'aaab', '#  o' / '#   o', '+3' / '3')."""
+    if s[:1] in "+-" and s[1:2].isdigit():
+        return s[1:]
+    if s[:1].isdigit() and rng.random() < 0.5:
+        return rng.choice("+-") + s
+    if len(s) < 2:
+        return s * 2
+    i = rng.randrange(len(s))
+    if rng.random() < 0.5 and len(s) < 48:
+        return s[:i] + s[i] + s[i:]
+    return s[:i] + s[i + 1:]
+
+
 def near_variant(rng, s, shuffle=True):
     """s changed a little, as near-identical strings differ: one character
     replaced or two swapped, a late word or number changed, cut short or

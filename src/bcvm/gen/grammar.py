@@ -9,7 +9,7 @@ rest to the reference interpreter, which discards scripts that break a limit.
 """
 from .. import config
 from .common import (RUN_FILLS, SERIES_STEMS, VAR_NAMES, WORDS, label_text, long_text, near_variant, pattern_text,
-                     random_text, run_text, small_int, string_literal)
+                     random_text, row_text, run_text, run_variant, small_int, string_literal)
 
 # print separators and endings people use, beyond the standard mix's few
 SEPS = ["", " ", "  ", ", ", ",", "-", " - ", "|", " | ", ":", ": ", "\t", "\n", " -> ", " = ", ". ", "/",
@@ -61,7 +61,9 @@ class Gen:
         # strings compared with near-identical ones, runs counted out at run
         # time (`"~" * w`, counts to 48, zero or negative), long strings indexed
         # at fixed places, and string expressions (`a + b`, `s * n`, f-strings,
-        # `len(a + b)`) as print arguments above other strings on the stack
+        # `len(a + b)`) as print arguments above other strings on the stack;
+        # many string comparisons (a run one longer, a sign dropped, or equal),
+        # and runs of identical items: `print(t, t, t, a == b)`, f"{x} {x} {x}"
         self.edge = edge
         self.labels = []        # labels printed so far, for near-identical ones
         self.nest = 0           # composite string expressions being built
@@ -253,10 +255,13 @@ class Gen:
             a = Expr(name, ATOM, self.known[name], "str")
         else:
             r = rng.random()
-            t = (pattern_text(rng) if r < 0.4 else rng.choice(WORDS) if r < 0.55 else label_text(rng) if r < 0.7
-                 else run_text(rng) if r < 0.8 else rng.choice(["+1", "1", "-1", "ab", "a", "(", ")", "#.", "x", " "]))
+            t = (pattern_text(rng) if r < 0.35 else rng.choice(WORDS) if r < 0.45 else label_text(rng) if r < 0.55
+                 else run_text(rng) if r < 0.65 else row_text(rng) if r < 0.75
+                 else rng.choice("+-") * (r < 0.85) + str(rng.randint(0, 99)) if r < 0.9
+                 else rng.choice(["+1", "1", "-1", "ab", "a", "(", ")", "#.", "x", " ", "?!?", "''"]))
             a = Expr(repr(t), ATOM, t, "str")
-        t = a.val if self.chance(0.3) else near_variant(rng, a.val)
+        r = rng.random()
+        t = a.val if r < 0.35 else run_variant(rng, a.val) if r < 0.6 and a.val else near_variant(rng, a.val)
         b = Expr(repr(t), ATOM, t, "str")
         if self.chance(0.5):
             a, b = b, a
@@ -298,8 +303,9 @@ class Gen:
     def str_literal_expr(self):
         if self.edge and self.C and self.chance(0.06):
             return Expr("''", ATOM, "", "str")
-        if self.edge and self.C and self.chance(0.1):
-            s = run_text(self.rng) if self.chance(0.6) else long_text(self.rng)
+        if self.edge and self.C and self.chance(0.12):
+            r = self.rng.random()
+            s = run_text(self.rng) if r < 0.4 else row_text(self.rng) if r < 0.7 else long_text(self.rng)
             return Expr(repr(s), ATOM, s, "str")
         if self.edge and self.chance(0.3 if self.C else 0.6):
             s = self.near_label()
@@ -818,6 +824,48 @@ class Gen:
         for row in rows:
             self.emit(depth + 1, row)
 
+    def multicmp_stmt(self, depth):
+        """Several string comparisons in one print, so each result lands on
+        others (often equal ones): `print(a == b, c != d, a == a)`,
+        `print(s, t, s == t, s != t)`."""
+        rng = self.rng
+        if self.chance(0.4):
+            a, op, b, val = self.near_pair()
+            ops = rng.sample(["==", "!=", "<", ">", "==", "!="], rng.randint(2, 3))
+            self.emit(depth, f"print({a.src}, {b.src}, " + ", ".join(f"{a.src} {o} {b.src}" for o in ops) + ")")
+            return
+        cmps = []
+        for _ in range(rng.randint(2, 6)):
+            a, op, b, val = self.near_pair()
+            cmps.append(f"{a.src} {op} {b.src}")
+        self.emit(depth, f"print({', '.join(cmps)})")
+
+    def runs_stmt(self, depth):
+        """Runs of identical items on the stack or in a string, where c5 lost
+        count: `print(t, t, t, x)`, `print(a == a, a == a, b)`,
+        `f"{x} {x} {x} {x}"`, `f"[{a}] [{b}] [{a}]"`."""
+        rng = self.rng
+        strs, ints = self.vars_of("str"), self.vars_of("int")
+        pool = [rng.choice(strs) if strs else None, rng.choice(ints) if ints else None,
+                self.str_literal_expr().src, rng.choice(["True", "False"]), str(rng.randint(-9, 99))]
+        if strs:
+            v = rng.choice(strs)
+            pool.append(f"{v} == {v}")
+        pool = [x for x in pool if x is not None]
+        x, y = rng.choice(pool), rng.choice(pool)
+        k, m = rng.randint(2, 7), rng.randint(0, 3)
+        args = [x] * k + [y] + [x] * m
+        if self.chance(0.5):
+            sep = rng.choice([" ", "", "-", "  ", ", ", "|"])
+            parts = rng.choice([[f"{{{x}}}", sep], [f"[{{{x}}}]", sep], [f"{{{x}}}{sep}{{{y}}}", sep]])
+            body = "".join(parts * rng.randint(2, 5)).replace('"', "'")
+            if "{" not in body or "\\" in body:
+                return
+            self.emit(depth, f'print(f"{body}")' if self.chance(0.6) else f'print({rng.choice(pool)}, f"{body}")')
+            return
+        kw = f", sep={rng.choice([' ', '', '-', ' | ', ', '])!r}" if self.chance(0.3) else ""
+        self.emit(depth, f"print({', '.join(args)}{kw})")
+
     def strcmp_stmt(self, depth):
         """Near-identical strings compared and printed, with the strings on the
         stack below: `print(s, t, s == t)`, `same = s != t`."""
@@ -951,7 +999,7 @@ class Gen:
         if self.edge:
             weights.update(tuple=8, chain=4)
         if self.edge and self.C:
-            weights.update(pad=10, rule=20, index=10, strcmp=20, strstack=35)
+            weights.update(pad=10, rule=20, index=10, strcmp=25, strstack=30, multicmp=40, runs=30)
         if self.edge and self.B:
             weights.update(logic=25, boolmix=12)
         if self.chance(0.02):
@@ -987,6 +1035,10 @@ class Gen:
             self.strcmp_stmt(depth)
         elif kind == "strstack":
             self.str_stack_stmt(depth)
+        elif kind == "multicmp":
+            self.multicmp_stmt(depth)
+        elif kind == "runs":
+            self.runs_stmt(depth)
         else:
             self.emit(depth, "pass")
 
