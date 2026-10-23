@@ -90,6 +90,12 @@ def step_weight(prog, trace, i):
         return 2.0        # taken jump, break, continue
     if op in TRIVIAL:
         return 0.3
+    if op == "LOAD_CONST" and type(prog.instrs[s0.ip].arg) is str and len(prog.instrs[s0.ip].arg) >= 4:
+        return 3.0        # copying a label out of the listing, often one of several near-identical ones
+    if op in ("BINARY_OP", "COMPARE_OP", "BUILD_STRING"):
+        n = prog.instrs[s0.ip].arg if op == "BUILD_STRING" else 2
+        if len(s0.stack) > n and type(s0.stack[-n - 1]) is str and any(type(v) is str for v in s0.stack[-n:]):
+            return 4.0    # a string op above another string: c4 merged them into its result
     if op == "BINARY_OP":
         ins = prog.instrs[s0.ip]
         if tokens.work_kind(ins, s0):

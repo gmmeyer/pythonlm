@@ -8,7 +8,8 @@ are unknown; the generator keeps loops bounded by construction and leaves the
 rest to the reference interpreter, which discards scripts that break a limit.
 """
 from .. import config
-from .common import SERIES_STEMS, VAR_NAMES, WORDS, pattern_text, random_text, small_int, string_literal
+from .common import (RUN_FILLS, SERIES_STEMS, VAR_NAMES, WORDS, label_text, long_text, near_variant, pattern_text,
+                     random_text, run_text, small_int, string_literal)
 
 # print separators and endings people use, beyond the standard mix's few
 SEPS = ["", " ", "  ", ", ", ",", "-", " - ", "|", " | ", ":", ": ", "\t", "\n", " -> ", " = ", ". ", "/",
@@ -55,8 +56,15 @@ class Gen:
         # bools used as numbers (`t == 1`, `(not a) + (not b)`, `n += i > 0`);
         # in phase C, loops over a string's positions (`s[i]`, `s[-1 - i]`,
         # counting and building strings) and longer f-strings and prints; empty
-        # strings, any print sep/end, fixed-width padding, `a = b = c = "."`
+        # strings, any print sep/end, fixed-width padding, `a = b = c = "."`;
+        # labels differing late ("Hour 1: stove lit" / "Hour 1: stove out"),
+        # strings compared with near-identical ones, runs counted out at run
+        # time (`"~" * w`, counts to 48, zero or negative), long strings indexed
+        # at fixed places, and string expressions (`a + b`, `s * n`, f-strings,
+        # `len(a + b)`) as print arguments above other strings on the stack
         self.edge = edge
+        self.labels = []        # labels printed so far, for near-identical ones
+        self.nest = 0           # composite string expressions being built
         self.series = [rng.choice(SERIES_STEMS), rng.randint(0, 3)]
         self.op_weights = [10, 8, 22, 30, 30] if arith else [30, 25, 18, 13, 14]
         self.B = phase >= "B"
@@ -131,6 +139,9 @@ class Gen:
         return self.int_literal()
 
     def str_to_int(self):
+        if self.edge and self.C and self.nest == 0 and self.chance(0.35):
+            e = self.composite_str()
+            return Expr(f"len({e.src})", ATOM, None if e.val is None else len(e.val), "int")
         strs = self.vars_of("str")
         if not strs:
             return None
@@ -202,6 +213,8 @@ class Gen:
     def comparison(self):
         rng = self.rng
         op = rng.choice(["<", "<=", "==", "!=", ">", ">="])
+        if self.edge and self.C and self.chance(0.3):
+            return self.near_compare()
         if self.C and self.vars_of("str") and self.chance(0.2):
             s = rng.choice(self.vars_of("str"))
             other = self.str_expr(shallow=True)
@@ -225,6 +238,32 @@ class Gen:
             val = {"<": a.val < b.val, "<=": a.val <= b.val, "==": a.val == b.val,
                    "!=": a.val != b.val, ">": a.val > b.val, ">=": a.val >= b.val}[op]
         return Expr(f"{_wrap(a, CMP + 1)} {op} {_wrap(b, CMP + 1)}", CMP, val, "bool")
+
+    def near_compare(self):
+        a, op, b, val = self.near_pair()
+        return Expr(f"{a.src} {op} {b.src}", CMP, val, "bool")
+
+    def near_pair(self):
+        """Two strings that differ by little or nothing: `'xyyxyx' == 'xyxyyx'`,
+        `'+1' == '1'`, `s != t` one character apart, `'ab' < 'aaab'`."""
+        rng = self.rng
+        strs = [v for v in self.vars_of("str") if self.known.get(v) is not None]
+        if strs and self.chance(0.5):
+            name = rng.choice(strs)
+            a = Expr(name, ATOM, self.known[name], "str")
+        else:
+            r = rng.random()
+            t = (pattern_text(rng) if r < 0.4 else rng.choice(WORDS) if r < 0.55 else label_text(rng) if r < 0.7
+                 else run_text(rng) if r < 0.8 else rng.choice(["+1", "1", "-1", "ab", "a", "(", ")", "#.", "x", " "]))
+            a = Expr(repr(t), ATOM, t, "str")
+        t = a.val if self.chance(0.3) else near_variant(rng, a.val)
+        b = Expr(repr(t), ATOM, t, "str")
+        if self.chance(0.5):
+            a, b = b, a
+        op = rng.choice(["==", "==", "!=", "!=", "<", ">", "<=", ">="])
+        val = {"<": a.val < b.val, "<=": a.val <= b.val, "==": a.val == b.val,
+               "!=": a.val != b.val, ">": a.val > b.val, ">=": a.val >= b.val}[op]
+        return a, op, b, val
 
     def cond(self, depth=0):
         rng = self.rng
@@ -259,7 +298,13 @@ class Gen:
     def str_literal_expr(self):
         if self.edge and self.C and self.chance(0.06):
             return Expr("''", ATOM, "", "str")
-        if self.edge and self.chance(0.55):
+        if self.edge and self.C and self.chance(0.1):
+            s = run_text(self.rng) if self.chance(0.6) else long_text(self.rng)
+            return Expr(repr(s), ATOM, s, "str")
+        if self.edge and self.chance(0.3 if self.C else 0.6):
+            s = self.near_label()
+            return Expr(repr(s), ATOM, s, "str")
+        if self.edge and self.chance(0.4):
             self.series[1] += self.rng.choice([1, 1, 1, 2, 0])
             s = f"{self.series[0]} {self.series[1]}"
             if self.chance(0.3):
@@ -267,6 +312,62 @@ class Gen:
             return Expr(repr(s), ATOM, s, "str")
         s = pattern_text(self.rng) if self.copy and self.chance(0.6) else string_literal(self.rng)
         return Expr(repr(s), ATOM, s, "str")
+
+    def near_label(self):
+        """A label like one already printed (a late word or number changed, cut
+        short, extended), or a fresh one to vary later."""
+        if self.labels and self.chance(0.65):
+            s = near_variant(self.rng, self.rng.choice(self.labels), shuffle=False)
+        else:
+            s = label_text(self.rng)
+        self.labels.append(s)
+        return s
+
+    def count_expr(self, top):
+        """A repeat count the compiler can't fold: a name holding -3..top if
+        one is known, else `name % k` of an unknown int, else None."""
+        rng = self.rng
+        known = [v for v in self.vars_of("int") if isinstance(self.known.get(v), int) and -3 <= self.known[v] <= top]
+        if known:
+            v = rng.choice(known)
+            return Expr(v, ATOM, self.known[v], "int")
+        ints = self.vars_of("int")
+        if ints:
+            return Expr(f"{rng.choice(ints)} % {rng.randint(2, min(top, 12))}", MUL, None, "int")
+        return None
+
+    def composite_str(self):
+        """A string expression computed at run time: two or three parts
+        concatenated (sometimes `s + s`), a repetition, an f-string, `str()` of
+        an int or bool, or another string expression."""
+        rng = self.rng
+        self.nest += 1
+        try:
+            r = rng.random()
+            if r < 0.4:
+                parts = [self.str_expr(shallow=True) for _ in range(rng.choice([2, 2, 2, 3]))]
+                if self.chance(0.15):
+                    parts[1] = parts[0]
+                src = " + ".join(_wrap(p, ADD, i > 0) for i, p in enumerate(parts))
+                val = "".join(p.val for p in parts) if all(p.val is not None for p in parts) else None
+                return Expr(src, ADD, val, "str")
+            if r < 0.6:
+                fill = rng.choice(RUN_FILLS)
+                n = self.count_expr(config.MAX_STR_LEN // len(fill))
+                if n is None:
+                    return self.str_expr(shallow=True)
+                val = None if n.val is None else fill * n.val
+                if self.chance(0.8):
+                    return Expr(f"{fill!r} * {_wrap(n, MUL, True)}", MUL, val, "str")
+                return Expr(f"{_wrap(n, MUL)} * {fill!r}", MUL, val, "str")
+            if r < 0.75:
+                return self.fstring()
+            if r < 0.87:
+                e = self.boolish() if self.B and self.chance(0.3) else self.int_expr(1, 2)
+                return Expr(f"str({e.src})", ATOM, None if e.val is None else str(e.val), "str")
+            return self.str_expr()
+        finally:
+            self.nest -= 1
 
     def str_expr(self, shallow=False):
         rng = self.rng
@@ -314,7 +415,9 @@ class Gen:
                 text = "".join(ch for ch in text if ch not in '{}"\\\n\t')
                 parts.append(text)
                 srcs.append(text)
-            if self.chance(0.65) or not self.vars_of("str"):
+            if self.edge and self.B and self.chance(0.15):
+                e = self.boolish()
+            elif self.chance(0.65) or not self.vars_of("str"):
                 e = self.int_expr(1, 2)
             else:
                 name = rng.choice(self.vars_of("str"))
@@ -336,6 +439,8 @@ class Gen:
         if not self.edge or not self.chance(0.7):
             return None
         rng = self.rng
+        if self.C and self.chance(0.12):
+            return " " + rng.choice(".-=*_") * rng.randint(2, 9) + " "
         if self.chance(0.35):
             return random_text(rng, 1, 4)
         s = rng.choice(SEPS)
@@ -351,6 +456,10 @@ class Gen:
             n = rng.randint(0, 10) if self.edge else rng.randint(2, 4)
             args = []
             for _ in range(n):
+                if self.edge and self.chance(0.25):
+                    e = self.composite_str()
+                    args.append(e.src if self.chance(0.8) else f"len({e.src})")
+                    continue
                 k = rng.random()
                 if k < 0.35:
                     args.append(self.str_literal_expr().src)
@@ -370,7 +479,7 @@ class Gen:
         r = rng.random()
         if r < 0.04:
             self.emit(depth, "print()")
-        elif r < (0.65 if self.copy else 0.35 if self.edge else 0.20):
+        elif r < (0.65 if self.copy else 0.5 if self.edge and not self.B else 0.35 if self.edge else 0.20):
             self.emit(depth, f"print({self.str_literal_expr().src})")
         elif self.B and r < 0.30:
             self.emit(depth, f"print({self.cond().src})")
@@ -445,6 +554,8 @@ class Gen:
         `a, b, c = c, a, b` (SWAP 3), `x, y = y, x % y` (SWAP 2)."""
         rng = self.rng
         ints = self.vars_of("int", assignable=True)
+        if self.edge and self.C and self.chance(0.4):
+            ints += self.vars_of("str", assignable=True)    # names of both kinds
         k = 3 if len(ints) >= 3 and self.chance(0.7) else 2
         if len(ints) < k:
             return self.assign_int(depth)
@@ -452,12 +563,12 @@ class Gen:
         order = targets[:]
         while order == targets:
             rng.shuffle(order)
-        rhs = [Expr(v, ATOM, self.known.get(v), "int") for v in order]
+        rhs = [Expr(v, ATOM, self.known.get(v), self.vars[v]) for v in order]
         if self.chance(0.4):
             rhs[rng.randrange(k)] = self.int_expr(1, 2)
         self.emit(depth, f"{', '.join(targets)} = {', '.join(e.src for e in rhs)}")
         for name, e in zip(targets, rhs):
-            self.set_var(name, "int", e.val)
+            self.set_var(name, e.kind, e.val)
 
     def chain_assign(self, depth):
         """One value bound to many names: `a = b = c = d = "."` (COPY 1 each)."""
@@ -520,6 +631,211 @@ class Gen:
         self.emit(depth, f"{t} = {e}")
         self.set_var(t, "str", None)
         self.emit(depth, f"print({t}, len({t}))" if self.chance(0.3) else f"print({t})")
+
+    def rule_stmt(self, depth):
+        """Runs counted out at run time, as rules, bars and ASCII art are drawn:
+        `print("~" * w)`, `print("TOTAL", "-" * w)`, `"|" + " " * w + "|"`,
+        `bar = "=" * n` (and `"*" * -1`, empty)."""
+        rng = self.rng
+        fill = rng.choice(RUN_FILLS)
+        top = config.MAX_STR_LEN // len(fill)
+        n = self.count_expr(top) if self.chance(0.4) else None
+        if n is None:
+            w = self.fresh_or_existing("int")
+            if w in self.protected:
+                return
+            v = rng.randint(7, top) if self.chance(0.7) else rng.randint(-3, 6)
+            self.emit(depth, f"{w} = {v}")
+            self.set_var(w, "int", v)
+            n = Expr(w, ATOM, v if self.straight else None, "int")
+        rep = f"{fill!r} * {_wrap(n, MUL, True)}" if self.chance(0.8) else f"{_wrap(n, MUL)} * {fill!r}"
+        r = rng.random()
+        if r < 0.3:
+            self.emit(depth, f"print({rep})")
+        elif r < 0.5:
+            self.emit(depth, f"print({self.str_literal_expr().src}, {rep})")
+        elif r < 0.7:
+            left = rng.choice(["|", "[", "+", "<", " ", "# "])
+            right = {"[": "]", "<": ">", "# ": ""}.get(left, left)
+            self.emit(depth, f"print({left!r} + {rep} + {right!r})")
+        else:
+            t = self.fresh_or_existing("str")
+            if t in self.protected:
+                return
+            self.emit(depth, f"{t} = {rep}")
+            self.set_var(t, "str", None if n.val is None else fill * n.val)
+            self.emit(depth, f"print({t}, len({t}))" if self.chance(0.5) else f"print({t})")
+
+    def index_stmt(self, depth):
+        """A long string indexed at fixed places: `s[17]`, `s[-9]`, `s[len(s) - 3]`."""
+        rng = self.rng
+        s = self.fresh_or_existing("str")
+        if s in self.protected:
+            return
+        text = long_text(rng) if self.chance(0.6) else self.str_literal_expr().val
+        self.emit(depth, f"{s} = {text!r}")
+        self.set_var(s, "str", text)
+        n = len(text)
+        if not n:
+            return
+
+        def one():
+            r = rng.random()
+            if r < 0.6:
+                return f"{s}[{rng.randrange(-n, n)}]"
+            if r < 0.8:
+                return f"{s}[len({s}) - {rng.randint(1, n)}]"
+            return f"{s}[{rng.randint(0, n - 1)} - len({s})]"
+
+        args = [one() for _ in range(rng.randint(1, 4))]
+        if self.chance(0.3):
+            args.insert(0, self.str_literal_expr().src)
+        self.emit(depth, f"print({', '.join(args)})" if self.chance(0.7) else f"print({' + '.join(args[-3:])})")
+
+    def str_name(self, depth):
+        """A str name to build with (literal + literal is folded by the
+        compiler), bound to a short literal first if there is none."""
+        rng = self.rng
+        strs = self.vars_of("str")
+        if strs and self.chance(0.7):
+            return rng.choice(strs)
+        name = self.fresh_or_existing("str")
+        if name in self.protected:
+            return rng.choice(strs) if strs else None
+        e = self.str_literal_expr()
+        if e.val is None or len(e.val) > 16:
+            w = rng.choice(WORDS)
+            e = Expr(repr(w), ATOM, w, "str")
+        self.emit(depth, f"{name} = {e.src}")
+        self.set_var(name, "str", e.val)
+        return name
+
+    def str_stack_stmt(self, depth):
+        """A string operation with other strings below it on the stack, where c4
+        merged the strings below into its result: `print(label, a + b)`,
+        `print(a, b, c + "/" + d)`, `s + (t + u)`, `s + "-" * n`, `print(a, f"{b}-{c}")`."""
+        rng = self.rng
+        a, b = self.str_name(depth), self.str_name(depth)
+        if a is None or b is None:
+            return
+
+        def lit():
+            return self.str_literal_expr().src
+
+        def op():
+            r = rng.random()
+            if r < 0.45:
+                parts = rng.choice([[a, b], [b, lit()], [lit(), a], [a, a]])
+                if self.chance(0.35):
+                    parts.insert(rng.randint(1, len(parts)), rng.choice([lit(), a, b]))
+                return " + ".join(parts)
+            if r < 0.6:
+                fill = rng.choice(RUN_FILLS)
+                n = self.count_expr(config.MAX_STR_LEN // len(fill))
+                if n is not None:
+                    return f"{fill!r} * {_wrap(n, MUL, True)}"
+            elif r < 0.75:
+                known = self.known.get(a)
+                if known:
+                    return f"{a}[{rng.randrange(-len(known), len(known))}]"
+            elif r < 0.9:
+                sep = rng.choice(["-", " ", "", ": ", "/", " x", "."])
+                return 'f"{' + a + "}" + sep + "{" + b + '}"'
+            else:
+                return f"str({self.int_expr(1, 2).src}) + {a}"
+            return f"{a} + {b}"
+
+        r = rng.random()
+        if r < 0.6:
+            args = [rng.choice([lit(), a, b]) for _ in range(rng.randint(1, 3))]
+            args.append(op())
+            if self.chance(0.4):
+                args.append(rng.choice([op(), f"len({op()})", self.int_expr(1, 2).src, lit()]))
+            kw = f", sep={self._kw(self.sep_text(), [' ', ', ', ': '])!r}" if self.chance(0.3) else ""
+            self.emit(depth, f"print({', '.join(args)}{kw})")
+        elif r < 0.85:
+            t = self.fresh_or_existing("str")
+            if t in self.protected:
+                return
+            self.emit(depth, f"{t} = {rng.choice([a, b, lit()])} + ({op()})")
+            self.set_var(t, "str", None)
+            self.emit(depth, f"print({t})" if self.chance(0.6) else f"print({t}, len({t}))")
+        else:
+            self.emit(depth, f"print({rng.choice([a, lit()])}, {op()} {rng.choice(['==', '!='])} {rng.choice([a, b, lit()])})")
+
+    def art_loop(self, depth):
+        """Rows drawn in a loop with counts from the loop variable, as triangles,
+        bars and tables are (`" " * (h - i) + "*" * (2 * i - 1)`,
+        `print(label, "#" * (3 * i))`); or a string grown each pass and
+        compared with a near-identical target (`t == "ababab"`)."""
+        rng = self.rng
+        i = self.loop_var()
+        if i in self.protected:
+            return
+        trips = rng.randint(2, 9)
+        start = rng.randint(0, 2)
+        h = start + trips
+        k = rng.choice([1, 1, 1, 2, 3, 4, 5])
+        while k > 1 and k * h > 40:
+            k -= 1
+        if h > 40:
+            return
+        self.enter_control_flow()
+        self.vars[i] = "int"    # so the names chosen below differ from it
+        self.protected.add(i)
+        try:
+            self._art_rows(depth, i, start, h, k)
+        finally:
+            self.protected.discard(i)
+
+    def _art_rows(self, depth, i, start, h, k):
+        rng = self.rng
+        label = self.str_literal_expr().src
+        rows = []
+        if self.C and self.chance(0.3):
+            t = self.fresh_or_existing("str")
+            if t in self.protected:
+                return
+            unit = rng.choice(["ab", "x", "-", "01", "#.", "o", " "])
+            target = near_variant(rng, unit * rng.randint(1, h)) if self.chance(0.6) else unit * rng.randint(1, h)
+            self.emit(depth, f"{t} = ''")
+            self.set_var(t, "str", None)
+            rows = [f"{t} = {t} + {unit!r}" if self.chance(0.7) else f"{t} += {unit!r}",
+                    rng.choice([f"print({t}, {t} == {target!r})", f"print({t} != {target!r}, len({t}))",
+                                f"print({label}, {t}, {target!r} == {t})"])]
+        else:
+            cnt = i if k == 1 else f"{k} * {i}"
+            fill = rng.choice(RUN_FILLS[:11])
+            for _ in range(rng.choice([1, 1, 2])):
+                rows.append(rng.choice([
+                    f"print({fill!r} * {_wrap(Expr(cnt, MUL, None, 'int'), MUL, True)})",
+                    f"print(' ' * ({k * h} - {cnt}) + {fill!r} * {_wrap(Expr(cnt, MUL, None, 'int'), MUL, True)})",
+                    f"print({label}, {fill!r} * {_wrap(Expr(cnt, MUL, None, 'int'), MUL, True)})",
+                    f"print('|' + {fill!r} * {_wrap(Expr(cnt, MUL, None, 'int'), MUL, True)} + ' ' * ({k * h} - {cnt}) + '|')",
+                    f"print({label} + {rng.choice([': ', ' ', ''])!r} + str({i}), {fill!r} * {_wrap(Expr(cnt, MUL, None, 'int'), MUL, True)})",
+                ]))
+        self.emit(depth, f"for {i} in range({start}, {h}):")
+        for row in rows:
+            self.emit(depth + 1, row)
+
+    def strcmp_stmt(self, depth):
+        """Near-identical strings compared and printed, with the strings on the
+        stack below: `print(s, t, s == t)`, `same = s != t`."""
+        rng = self.rng
+        a, op, b, val = self.near_pair()
+        e = Expr(f"{a.src} {op} {b.src}", CMP, val, "bool")
+        r = rng.random()
+        if r < 0.4:
+            self.emit(depth, f"print({a.src}, {b.src}, {e.src})")
+        elif r < 0.7:
+            self.emit(depth, f"print({e.src})")
+        else:
+            f = self.fresh_or_existing("bool")
+            if f in self.protected:
+                return
+            self.emit(depth, f"{f} = {e.src}")
+            self.set_var(f, "bool", e.val)
+            self.emit(depth, f"print({f})")
 
     def assign_bool(self, depth):
         name = self.fresh_or_existing("bool")
@@ -635,7 +951,7 @@ class Gen:
         if self.edge:
             weights.update(tuple=8, chain=4)
         if self.edge and self.C:
-            weights.update(pad=10)
+            weights.update(pad=10, rule=20, index=10, strcmp=20, strstack=35)
         if self.edge and self.B:
             weights.update(logic=25, boolmix=12)
         if self.chance(0.02):
@@ -663,6 +979,14 @@ class Gen:
             self.chain_assign(depth)
         elif kind == "pad":
             self.pad_stmt(depth)
+        elif kind == "rule":
+            self.rule_stmt(depth)
+        elif kind == "index":
+            self.index_stmt(depth)
+        elif kind == "strcmp":
+            self.strcmp_stmt(depth)
+        elif kind == "strstack":
+            self.str_stack_stmt(depth)
         else:
             self.emit(depth, "pass")
 
@@ -685,6 +1009,8 @@ class Gen:
         rng = self.rng
         if self.edge and self.C and self.iter_budget == 1 and self.chance(0.2):
             return self.str_walk(depth)
+        if self.edge and self.C and self.iter_budget == 1 and self.chance(0.15):
+            return self.art_loop(depth)
         if self.B and depth < 3:
             r = rng.random() * (1 + depth)
             in_loop = bool(self.loops)
