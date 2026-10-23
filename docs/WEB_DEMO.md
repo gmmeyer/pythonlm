@@ -96,14 +96,20 @@ Chromium 152:
    to the PyTorch gate on 60 hand-written scripts (c4, c5 and the average; each
    ONNX export also matches PyTorch's argmax on all 30,447 output tokens of
    `scripts/onnx_parity.py`).
-3. Curate examples (`web/build.py` picks passing hand-written scripts by
-   length; titles are their first lines).
-4. Gate the shipped artifact on all 600 hand-written scripts through the
-   browser stack, and quote those numbers in the post (the Cicero lesson):
-   `web/test/node_run.mjs` runs the page's Pyodide + `model.js` +
-   onnxruntime-web WASM in Node, in parallel shards (~13 steps/s each, 160K
-   steps): `for k in 0..7: node web/test/node_run.mjs <node_modules>
-   <model.onnx> <gate dir> all $k/8`. Spot-check a few in Chromium.
-5. Upload `pythonlm.onnx` and `pythonlm.json` to Hugging Face
-   (`gmmeyer/pythonlm`?) and copy `web/dist/` minus `model/` to the site's
-   `pythonlm/`. Both are yours to approve.
+3. ~~Curate examples~~: phases A and B use passing scripts that open with a
+   descriptive comment (the comment is the title), phase C six picked by hand
+   (`CURATED` in `web/build.py`).
+4. ~~Gate the shipped artifact~~ on all 600 hand-written scripts through the
+   browser stack (`web/test/node_run.mjs`: the page's Pyodide + `model.js` +
+   onnxruntime-web WASM in Node, 8 shards, `for k in 0..7: node
+   web/test/node_run.mjs <node_modules> <model.onnx> <gate dir> all $k/8`;
+   85 minutes with all 8 sharing the CPU): **A 199/200, B 199/200, C 188/200**,
+   the same pass/fail as the PyTorch gate on 599; `hc3_029` passes in the
+   browser and fails in PyTorch (a near-tie `'abc' != 'abc'` that the fp16
+   weights tip the right way). Spot-checked in Chromium from the site's path:
+   the Roman numerals example matches Python.
+5. ~~Upload~~ to Hugging Face (done, private) and copy `web/dist/` minus
+   `model/` to the site's `pythonlm/` (done on the site's `pythonlm-post`
+   branch, not pushed). Left for launch: a license, then make
+   `gmmeyer/pythonlm` (Hugging Face) and the GitHub repo public, then push
+   the site.
