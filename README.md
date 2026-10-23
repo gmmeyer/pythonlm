@@ -41,3 +41,8 @@ natural/         LLM-written natural scripts per phase (+ SPEC.md)
 eval/handwritten/  hand-written eval scripts, 200 per phase (never in training)
 scripts/sync_to_trainer.sh
 ```
+
+## License
+
+MIT, see [LICENSE](LICENSE). The model weights on Hugging Face
+([gmmeyer/pythonlm](https://huggingface.co/gmmeyer/pythonlm)) are under the same license.

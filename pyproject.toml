@@ -3,6 +3,8 @@ name = "bcvm"
 version = "0.1.0"
 description = "Learned bytecode interpreter: data pipeline, reference interpreter and runner harness"
 requires-python = "==3.14.*"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = ["numpy>=2.3"]
 
 [project.optional-dependencies]
