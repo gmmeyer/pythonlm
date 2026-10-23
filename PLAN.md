@@ -259,6 +259,7 @@ pythonlm-data/
 | c3 | c2 continued | C 25% + C arith 7% + C copy 3% + C edge3 35% + B 5% + B edge3 7% + B arith 2% + A 3% + A edge2 10% + A arith 3%, 4.0B tokens, lr 5e-4, 110 min | C: **1.3e-3**; `s[i]` fixed (3,465 wrong → under 37), but string `+` 885 (spaces-only strings lose their quotes), `<=` 658 (single-character string comparisons), `*` 586 | hand-written A 97.5%, B 98.0%, C 57.5% |
 | c4 | c3 continued | C 35% + C arith 6% + C copy 4% + C edge4 25% + C edge3 5% + B 5% + B edge3 6% + B arith 2% + A 3% + A edge2 7% + A arith 2%, 3.6B tokens, lr 4e-4, 100 min | C: **3.6e-4** (string `+` 235, `FORMAT_SIMPLE` 154, `<=` 152); A after C 1.4e-4, B 5.7e-5 | first 2,000 of C: **98.3%**; hand-written A 95.0%, B **99.0%**, C 77.0%. Shipped to the web demo |
 | c5 | c4 continued | C 30% + C arith 5% + C copy 3% + C edge5 25% + C edge4 7% + B 5% + B edge3 5% + B arith 2% + A 3% + A edge5 10% + A edge2 3% + A arith 2%, 4.0B tokens, lr 3e-4, seed 5, 112 min | C: **1.1e-4** (`CALL` 107, `<=` 36, `%` 33 of 2.1M steps) | first 2,000 of C: **98.55%**; hand-written A **99.0%**, B 99.0%, C **90.5%** |
+| c6 | c5 continued | C 30% + C arith 5% + C copy 3% + C edge6 25% + C edge5 8% + C edge4 3% + B 5% + B edge3 4% + B arith 2% + A 3% + A edge5 8% + A edge2 2% + A arith 2%, 3.6B tokens, lr 2.5e-4, seed 6 | running | |
 
 a1 and a2 used format 1 data, now in `$BCVM_DATA/v1/`. b1's `LOAD_CONST` and
 `CALL` errors (167 of 341) all come from one held-out natural script that prints
@@ -480,6 +481,20 @@ every word), and 5 are validator stops: rerun on those steps, c5 writes one
 item too few where the stack holds a run of identical items (`print NULL True
 True` and a comparison giving `True` becomes two `True`s, not three), the
 counting-runs weakness again, on stack entries instead of characters.
+
+Rerun at the step where each first went wrong, the comparisons are
+`'?!?' == '?!?'` (False), `'+3' == '3'`, `'aab' == 'aaab'` and
+`'1001011001' == '1001001001'` (all True), usually with copies of the
+operands just below on the stack (`print(a, b, a == b)`); the runs are one
+`True` too few pushed onto `True True True`, an extra `'[]'` or `'0 '` from
+`BUILD_STRING`, and one space dropped copying `'#  o        o  #'`. edge5
+gave ~37K near-miss comparisons, where indexing needed ~1M examples, so
+`edge6` is about volume: several comparisons per print, pairs that are
+equal or differ by one run's length or a sign, prints of runs of identical
+arguments and f-strings of repeated parts, ASCII-art rows; the pipeline
+samples string comparisons at weight 4, and `BUILD_STRING` and steps leaving
+3+ identical items in a row at 3. String comparisons go from 2.5% to 7.9%
+of sampled phase C steps. `phaseC/train_edge6`: 1.5B tokens.
 
 ## Next steps
 
