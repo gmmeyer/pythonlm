@@ -260,7 +260,7 @@ pythonlm-data/
 | c4 | c3 continued | C 35% + C arith 6% + C copy 4% + C edge4 25% + C edge3 5% + B 5% + B edge3 6% + B arith 2% + A 3% + A edge2 7% + A arith 2%, 3.6B tokens, lr 4e-4, 100 min | C: **3.6e-4** (string `+` 235, `FORMAT_SIMPLE` 154, `<=` 152); A after C 1.4e-4, B 5.7e-5 | first 2,000 of C: **98.3%**; hand-written A 95.0%, B **99.0%**, C 77.0%. Shipped to the web demo |
 | c5 | c4 continued | C 30% + C arith 5% + C copy 3% + C edge5 25% + C edge4 7% + B 5% + B edge3 5% + B arith 2% + A 3% + A edge5 10% + A edge2 3% + A arith 2%, 4.0B tokens, lr 3e-4, seed 5, 112 min | C: **1.1e-4** (`CALL` 107, `<=` 36, `%` 33 of 2.1M steps) | first 2,000 of C: **98.55%**; hand-written A **99.0%**, B 99.0%, C **90.5%** |
 | c6 | c5 continued | C 30% + C arith 5% + C copy 3% + C edge6 25% + C edge5 8% + C edge4 3% + B 5% + B edge3 4% + B arith 2% + A 3% + A edge5 8% + A edge2 2% + A arith 2%, 3.6B tokens, lr 2.5e-4, seed 6, 102 min | C: 3.0e-4 (`<=` 291, nearly all one script family: `'A' <= '4'` True; `BUILD_STRING` 182, closing the string at an interpolation) | first 2,000 of C: 97.35% (31 validator stops); hand-written A 97.5%, B 98.5%, C 91.5% |
-| c56avg | the average of c5's and c6's weights | | C: 2.0e-4 (`<=` 286, the same family), A **4.5e-5**, B **5.2e-5** | first 2,000 of C: **99.55%**; hand-written A **99.5%**, B **99.5%**, C **93.5%** (0 validator stops). Shipped to the web demo |
+| c56avg | the average of c5's and c6's weights (`scripts/average_checkpoints.py`) | | C: 2.0e-4 (`<=` 286, the same family), A **4.5e-5**, B **5.2e-5** | first 2,000 of C: **99.55%**; hand-written A **99.5%**, B **99.5%**, C **93.5%** (0 validator stops). Shipped to the web demo |
 
 a1 and a2 used format 1 data, now in `$BCVM_DATA/v1/`. b1's `LOAD_CONST` and
 `CALL` errors (167 of 341) all come from one held-out natural script that prints
@@ -580,5 +580,6 @@ uv run --extra train bcvm train --name b1 --data B=0.75,A=0.25 --tokens 3e9 --in
 uv run --extra train bcvm evalsteps $BCVM_DATA/runs/a1/final.pt phaseA/eval_test   # teacher-forced, by opcode
 uv run --extra train bcvm gate $BCVM_DATA/runs/a1/final.pt phaseA/eval_test        # end-to-end stdout match
 uv run --extra train bcvm run my_script.py --ckpt $BCVM_DATA/runs/a1/final.pt
+uv run --extra train python scripts/average_checkpoints.py $BCVM_DATA/runs/c56avg/final.pt $BCVM_DATA/runs/c{5,6}/final.pt   # weight average
 scripts/sync_to_trainer.sh user@trainer:/data/pythonlm-data phaseA phaseB
 ```
